@@ -14,23 +14,20 @@
         android:supportsRtl="true"
         android:theme="@style/AppTheme">
 
-        <activity
-            android:name=".ui.MainActivity"
-            android:exported="true">
+        <activity android:name=".ui.MainActivity" android:exported="true">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN"/>
                 <category android:name="android.intent.category.LAUNCHER"/>
             </intent-filter>
         </activity>
 
-        <activity
-            android:name=".ui.DetailActivity"
-            android:exported="false"
+        <activity android:name=".ui.DetailActivity" android:exported="false"
             android:parentActivityName=".ui.MainActivity"/>
 
-        <receiver
-            android:name=".service.BootReceiver"
-            android:exported="true">
+        <activity android:name=".ui.SummaryActivity" android:exported="false"
+            android:parentActivityName=".ui.MainActivity"/>
+
+        <receiver android:name=".service.BootReceiver" android:exported="true">
             <intent-filter>
                 <action android:name="android.intent.action.BOOT_COMPLETED"/>
             </intent-filter>

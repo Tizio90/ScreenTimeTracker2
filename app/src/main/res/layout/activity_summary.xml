@@ -1,0 +1,59 @@
+<?xml version="1.0" encoding="utf-8"?>
+<ScrollView
+    xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="#F5F5F5">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:padding="12dp">
+
+        <!-- Bar chart -->
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Daily Screen Time"
+            android:textSize="15sp"
+            android:textStyle="bold"
+            android:textColor="@color/colorPrimary"
+            android:paddingBottom="6dp"/>
+
+        <com.github.mikephil.charting.charts.BarChart
+            android:id="@+id/chartBar"
+            android:layout_width="match_parent"
+            android:layout_height="220dp"
+            android:background="#FFFFFF"/>
+
+        <!-- Stats summary -->
+        <TextView
+            android:id="@+id/statsSummary"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="12dp"
+            android:background="#FFFFFF"
+            android:padding="14dp"
+            android:textSize="14sp"
+            android:lineSpacingMultiplier="1.6"/>
+
+        <!-- Pie chart -->
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="16dp"
+            android:text="By Category"
+            android:textSize="15sp"
+            android:textStyle="bold"
+            android:textColor="@color/colorPrimary"
+            android:paddingBottom="6dp"/>
+
+        <com.github.mikephil.charting.charts.PieChart
+            android:id="@+id/chartPie"
+            android:layout_width="match_parent"
+            android:layout_height="280dp"
+            android:background="#FFFFFF"/>
+
+    </LinearLayout>
+</ScrollView>

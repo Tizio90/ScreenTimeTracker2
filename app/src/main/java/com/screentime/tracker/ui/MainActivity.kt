@@ -29,7 +29,7 @@ class MainActivity : AppCompatActivity() {
         setContentView(binding.root)
         supportActionBar?.title = "Screen Time Tracker"
 
-        adapter = UsageAdapter { record ->
+        adapter = UsageAdapter(viewModel.repo) { record ->
             startActivity(Intent(this, DetailActivity::class.java).apply {
                 putExtra(DetailActivity.EXTRA_PACKAGE, record.packageName)
                 putExtra(DetailActivity.EXTRA_APP_NAME, record.appName)
@@ -43,48 +43,44 @@ class MainActivity : AppCompatActivity() {
             binding.emptyView.visibility = if (records.isEmpty()) View.VISIBLE else View.GONE
         }
         viewModel.totalMinutes.observe(this) { total ->
-            binding.totalTimeText.text = "Total today: ${viewModel.formatMinutes(total)}"
+            binding.totalTimeText.text = "Today: ${viewModel.formatMinutes(total)}"
         }
         viewModel.selectedDate.observe(this) { date ->
             binding.dateText.text = date
         }
         viewModel.availableDates.observe(this) { dates ->
-            if (dates.isEmpty()) {
-                Toast.makeText(this, "No history yet", Toast.LENGTH_SHORT).show()
-                return@observe
-            }
-            val arr = ArrayAdapter(this, android.R.layout.simple_list_item_1, dates)
+            if (dates.isEmpty()) { Toast.makeText(this, "No history yet", Toast.LENGTH_SHORT).show(); return@observe }
             AlertDialog.Builder(this)
                 .setTitle("Select Date")
-                .setAdapter(arr) { _, which -> viewModel.loadDate(dates[which]) }
-                .show()
+                .setAdapter(ArrayAdapter(this, android.R.layout.simple_list_item_1, dates)) { _, which ->
+                    viewModel.loadDate(dates[which])
+                }.show()
         }
 
         binding.fabRefresh.setOnClickListener {
-            if (!viewModel.repo.hasUsagePermission()) {
-                showPermissionDialog()
-            } else {
-                Toast.makeText(this, "Refreshing...", Toast.LENGTH_SHORT).show()
-                viewModel.refreshNow()
-            }
+            if (!viewModel.repo.hasUsagePermission()) showPermissionDialog()
+            else { Toast.makeText(this, "Refreshing...", Toast.LENGTH_SHORT).show(); viewModel.refreshNow() }
         }
         binding.btnToday.setOnClickListener { viewModel.loadToday() }
         binding.btnPickDate.setOnClickListener { viewModel.loadAvailableDates() }
-
-        if (!viewModel.repo.hasUsagePermission()) {
-            showPermissionDialog()
-        } else {
-            UsageCollectorWorker.schedule(this)
-            viewModel.refreshNow()
+        binding.btnWeekly.setOnClickListener {
+            startActivity(Intent(this, SummaryActivity::class.java).apply {
+                putExtra(SummaryActivity.EXTRA_MODE, SummaryActivity.MODE_WEEKLY)
+            })
         }
+        binding.btnMonthly.setOnClickListener {
+            startActivity(Intent(this, SummaryActivity::class.java).apply {
+                putExtra(SummaryActivity.EXTRA_MODE, SummaryActivity.MODE_MONTHLY)
+            })
+        }
+
+        if (!viewModel.repo.hasUsagePermission()) showPermissionDialog()
+        else { UsageCollectorWorker.schedule(this); viewModel.refreshNow() }
     }
 
     override fun onResume() {
         super.onResume()
-        if (viewModel.repo.hasUsagePermission()) {
-            UsageCollectorWorker.schedule(this)
-            viewModel.refreshNow()
-        }
+        if (viewModel.repo.hasUsagePermission()) { UsageCollectorWorker.schedule(this); viewModel.refreshNow() }
     }
 
     override fun onCreateOptionsMenu(menu: Menu): Boolean {
@@ -96,19 +92,15 @@ class MainActivity : AppCompatActivity() {
         return when (item.itemId) {
             R.id.action_export -> {
                 val records = viewModel.repo.getAllRecords()
-                if (records.isEmpty()) {
-                    Toast.makeText(this, "No data to export yet", Toast.LENGTH_SHORT).show()
-                } else {
-                    val intent = CsvExporter.export(this, records)
+                if (records.isEmpty()) Toast.makeText(this, "No data to export yet", Toast.LENGTH_SHORT).show()
+                else {
+                    val intent = CsvExporter.export(this, records, viewModel.repo)
                     if (intent != null) startActivity(Intent.createChooser(intent, "Export CSV"))
                     else Toast.makeText(this, "Export failed", Toast.LENGTH_SHORT).show()
                 }
                 true
             }
-            R.id.action_permission -> {
-                startActivity(Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS))
-                true
-            }
+            R.id.action_permission -> { startActivity(Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS)); true }
             else -> super.onOptionsItemSelected(item)
         }
     }
@@ -116,11 +108,8 @@ class MainActivity : AppCompatActivity() {
     private fun showPermissionDialog() {
         AlertDialog.Builder(this)
             .setTitle("Permission Required")
-            .setMessage("This app needs Usage Access permission to track screen time.\n\nTap OK to open Settings, find 'Screen Time Tracker' and enable it.")
-            .setPositiveButton("Open Settings") { _, _ ->
-                startActivity(Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS))
-            }
-            .setNegativeButton("Cancel", null)
-            .show()
+            .setMessage("This app needs Usage Access permission.\n\nTap OK → find 'Screen Time Tracker' → enable it.")
+            .setPositiveButton("Open Settings") { _, _ -> startActivity(Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS)) }
+            .setNegativeButton("Cancel", null).show()
     }
 }

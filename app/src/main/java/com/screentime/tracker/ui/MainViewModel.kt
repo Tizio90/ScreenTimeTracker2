@@ -17,10 +17,11 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     val selectedDate = MutableLiveData<String>()
     val totalMinutes = MutableLiveData<Long>()
     val availableDates = MutableLiveData<List<String>>()
+    val weeklyData = MutableLiveData<List<Pair<String, Long>>>()
+    val monthlyData = MutableLiveData<List<Pair<String, Long>>>()
+    val categoryData = MutableLiveData<Map<String, Long>>()
 
-    init {
-        loadToday()
-    }
+    init { loadToday() }
 
     fun loadToday() = loadDate(repo.getTodayDate())
 
@@ -29,6 +30,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch(Dispatchers.IO) {
             usageList.postValue(repo.getUsageForDate(date))
             totalMinutes.postValue(repo.getTotalMinutesForDate(date))
+            categoryData.postValue(repo.getCategoryTotalsForDate(date))
         }
     }
 
@@ -38,12 +40,25 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
+    fun loadWeeklyData() {
+        viewModelScope.launch(Dispatchers.IO) {
+            weeklyData.postValue(repo.getWeeklyData())
+        }
+    }
+
+    fun loadMonthlyData() {
+        viewModelScope.launch(Dispatchers.IO) {
+            monthlyData.postValue(repo.getMonthlyData())
+        }
+    }
+
     fun refreshNow() {
         viewModelScope.launch(Dispatchers.IO) {
             repo.collectAndSaveToday()
             val date = selectedDate.value ?: repo.getTodayDate()
             usageList.postValue(repo.getUsageForDate(date))
             totalMinutes.postValue(repo.getTotalMinutesForDate(date))
+            categoryData.postValue(repo.getCategoryTotalsForDate(date))
         }
     }
 

@@ -6,10 +6,13 @@ import androidx.recyclerview.widget.DiffUtil
 import androidx.recyclerview.widget.ListAdapter
 import androidx.recyclerview.widget.RecyclerView
 import com.screentime.tracker.data.UsageRecord
+import com.screentime.tracker.data.UsageRepository
 import com.screentime.tracker.databinding.ItemUsageBinding
 
-class UsageAdapter(private val onClick: (UsageRecord) -> Unit) :
-    ListAdapter<UsageRecord, UsageAdapter.ViewHolder>(DIFF) {
+class UsageAdapter(
+    private val repo: UsageRepository,
+    private val onClick: (UsageRecord) -> Unit
+) : ListAdapter<UsageRecord, UsageAdapter.ViewHolder>(DIFF) {
 
     companion object {
         val DIFF = object : DiffUtil.ItemCallback<UsageRecord>() {
@@ -29,9 +32,11 @@ class UsageAdapter(private val onClick: (UsageRecord) -> Unit) :
     override fun onBindViewHolder(holder: ViewHolder, position: Int) {
         val record = getItem(position)
         val maxMinutes = getItem(0).totalMinutes.coerceAtLeast(1)
+        val meta = repo.getAppMeta(record.packageName)
+        val displayName = meta.customName?.takeIf { it.isNotBlank() } ?: record.appName
         holder.binding.apply {
-            appNameText.text = record.appName
-            packageText.text = record.packageName
+            appNameText.text = displayName
+            packageText.text = if (meta.category != "Uncategorized") "📁 ${meta.category}  •  ${record.packageName}" else record.packageName
             timeText.text = formatMinutes(record.totalMinutes)
             usageBar.progress = ((record.totalMinutes * 100) / maxMinutes).toInt()
             root.setOnClickListener { onClick(record) }
@@ -39,8 +44,7 @@ class UsageAdapter(private val onClick: (UsageRecord) -> Unit) :
     }
 
     private fun formatMinutes(minutes: Long): String {
-        val h = minutes / 60
-        val m = minutes % 60
+        val h = minutes / 60; val m = minutes % 60
         return if (h > 0) "${h}h ${m}m" else "${m}m"
     }
 }

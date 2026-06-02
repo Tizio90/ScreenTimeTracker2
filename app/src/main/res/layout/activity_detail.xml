@@ -10,16 +10,46 @@
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:background="@color/colorPrimary"
-        android:padding="16dp">
+        android:padding="16dp"
+        android:orientation="vertical">
 
         <TextView
             android:id="@+id/summaryText"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:textSize="15sp"
-            android:textColor="@color/colorWhite"
+            android:textSize="14sp"
+            android:textColor="#FFFFFF"
             android:lineSpacingMultiplier="1.5"/>
 
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="12dp"
+            android:orientation="horizontal">
+
+            <Button
+                android:id="@+id/btnRename"
+                android:layout_width="0dp"
+                android:layout_height="36dp"
+                android:layout_weight="1"
+                android:layout_marginEnd="6dp"
+                android:text="✏ Rename"
+                android:textSize="13sp"
+                android:textColor="@color/colorPrimary"
+                android:background="#FFFFFF"/>
+
+            <Button
+                android:id="@+id/btnCategory"
+                android:layout_width="0dp"
+                android:layout_height="36dp"
+                android:layout_weight="1"
+                android:layout_marginStart="6dp"
+                android:text="📁 Category"
+                android:textSize="13sp"
+                android:textColor="@color/colorPrimary"
+                android:background="#FFFFFF"/>
+
+        </LinearLayout>
     </LinearLayout>
 
     <TextView
