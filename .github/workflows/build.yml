@@ -22,11 +22,11 @@ jobs:
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3
 
-      - name: Install Gradle wrapper
+      - name: Install Gradle
         run: |
-          wget -q https://services.gradle.org/distributions/gradle-8.0-bin.zip -O gradle-8.0-bin.zip
-          unzip -q gradle-8.0-bin.zip
-          ./gradle-8.0/bin/gradle wrapper --gradle-version=8.0
+          wget -q https://services.gradle.org/distributions/gradle-7.5-bin.zip -O gradle.zip
+          unzip -q gradle.zip
+          ./gradle-7.5/bin/gradle wrapper --gradle-version=7.5
           chmod +x gradlew
 
       - name: Build Debug APK

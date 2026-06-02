@@ -5,6 +5,7 @@ import android.os.Bundle
 import android.provider.Settings
 import android.view.Menu
 import android.view.MenuItem
+import android.view.View
 import android.widget.ArrayAdapter
 import android.widget.Toast
 import androidx.activity.viewModels
@@ -26,11 +27,49 @@ class MainActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
         binding = ActivityMainBinding.inflate(layoutInflater)
         setContentView(binding.root)
-        setSupportActionBar(binding.toolbar)
+        supportActionBar?.title = "Screen Time Tracker"
 
-        setupRecyclerView()
-        setupObservers()
-        setupListeners()
+        adapter = UsageAdapter { record ->
+            startActivity(Intent(this, DetailActivity::class.java).apply {
+                putExtra(DetailActivity.EXTRA_PACKAGE, record.packageName)
+                putExtra(DetailActivity.EXTRA_APP_NAME, record.appName)
+            })
+        }
+        binding.recyclerView.layoutManager = LinearLayoutManager(this)
+        binding.recyclerView.adapter = adapter
+
+        viewModel.usageList.observe(this) { records ->
+            adapter.submitList(records)
+            binding.emptyView.visibility = if (records.isEmpty()) View.VISIBLE else View.GONE
+        }
+        viewModel.totalMinutes.observe(this) { total ->
+            binding.totalTimeText.text = "Total today: ${viewModel.formatMinutes(total)}"
+        }
+        viewModel.selectedDate.observe(this) { date ->
+            binding.dateText.text = date
+        }
+        viewModel.availableDates.observe(this) { dates ->
+            if (dates.isEmpty()) {
+                Toast.makeText(this, "No history yet", Toast.LENGTH_SHORT).show()
+                return@observe
+            }
+            val arr = ArrayAdapter(this, android.R.layout.simple_list_item_1, dates)
+            AlertDialog.Builder(this)
+                .setTitle("Select Date")
+                .setAdapter(arr) { _, which -> viewModel.loadDate(dates[which]) }
+                .show()
+        }
+
+        binding.fabRefresh.setOnClickListener {
+            if (!viewModel.repo.hasUsagePermission()) {
+                showPermissionDialog()
+            } else {
+                Toast.makeText(this, "Refreshing...", Toast.LENGTH_SHORT).show()
+                viewModel.refreshNow()
+            }
+        }
+        binding.btnToday.setOnClickListener { viewModel.loadToday() }
+        binding.btnPickDate.setOnClickListener { viewModel.loadAvailableDates() }
 
         if (!viewModel.repo.hasUsagePermission()) {
             showPermissionDialog()
@@ -40,54 +79,12 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    private fun setupRecyclerView() {
-        adapter = UsageAdapter { record ->
-            val intent = Intent(this, DetailActivity::class.java).apply {
-                putExtra(DetailActivity.EXTRA_PACKAGE, record.packageName)
-                putExtra(DetailActivity.EXTRA_APP_NAME, record.appName)
-            }
-            startActivity(intent)
-        }
-        binding.recyclerView.apply {
-            layoutManager = LinearLayoutManager(this@MainActivity)
-            adapter = this@MainActivity.adapter
-        }
-    }
-
-    private fun setupObservers() {
-        viewModel.usageList.observe(this) { records ->
-            adapter.submitList(records)
-            binding.emptyView.visibility =
-                if (records.isEmpty()) android.view.View.VISIBLE else android.view.View.GONE
-        }
-
-        viewModel.totalMinutes.observe(this) { total ->
-            binding.totalTimeText.text = "Total today: ${viewModel.formatMinutes(total)}"
-        }
-
-        viewModel.selectedDate.observe(this) { date ->
-            binding.dateText.text = date
-        }
-
-        viewModel.availableDates.observe(this) { dates ->
-            if (dates.isEmpty()) return@observe
-            val dialogAdapter = ArrayAdapter(this, android.R.layout.simple_list_item_1, dates)
-            AlertDialog.Builder(this)
-                .setTitle("Select Date")
-                .setAdapter(dialogAdapter) { _, which ->
-                    viewModel.loadDate(dates[which])
-                }
-                .show()
-        }
-    }
-
-    private fun setupListeners() {
-        binding.fabRefresh.setOnClickListener {
-            Toast.makeText(this, "Refreshing…", Toast.LENGTH_SHORT).show()
+    override fun onResume() {
+        super.onResume()
+        if (viewModel.repo.hasUsagePermission()) {
+            UsageCollectorWorker.schedule(this)
             viewModel.refreshNow()
         }
-        binding.btnToday.setOnClickListener { viewModel.loadToday() }
-        binding.btnPickDate.setOnClickListener { viewModel.loadAvailableDates() }
     }
 
     override fun onCreateOptionsMenu(menu: Menu): Boolean {
@@ -97,7 +94,17 @@ class MainActivity : AppCompatActivity() {
 
     override fun onOptionsItemSelected(item: MenuItem): Boolean {
         return when (item.itemId) {
-            R.id.action_export -> { exportCsv(); true }
+            R.id.action_export -> {
+                val records = viewModel.repo.getAllRecords()
+                if (records.isEmpty()) {
+                    Toast.makeText(this, "No data to export yet", Toast.LENGTH_SHORT).show()
+                } else {
+                    val intent = CsvExporter.export(this, records)
+                    if (intent != null) startActivity(Intent.createChooser(intent, "Export CSV"))
+                    else Toast.makeText(this, "Export failed", Toast.LENGTH_SHORT).show()
+                }
+                true
+            }
             R.id.action_permission -> {
                 startActivity(Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS))
                 true
@@ -106,40 +113,14 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    private fun exportCsv() {
-        val records = viewModel.repo.getAllRecords()
-        if (records.isEmpty()) {
-            Toast.makeText(this, "No data to export yet.", Toast.LENGTH_SHORT).show()
-            return
-        }
-        val intent = CsvExporter.export(this, records)
-        if (intent != null) {
-            startActivity(Intent.createChooser(intent, "Export Screen Time CSV"))
-        } else {
-            Toast.makeText(this, "Export failed.", Toast.LENGTH_SHORT).show()
-        }
-    }
-
     private fun showPermissionDialog() {
         AlertDialog.Builder(this)
             .setTitle("Permission Required")
-            .setMessage(
-                "Screen Time Tracker needs the 'Usage Access' permission to monitor which apps you use.\n\n" +
-                "Tap OK to open Settings, then find 'Screen Time Tracker' and enable it."
-            )
+            .setMessage("This app needs Usage Access permission to track screen time.\n\nTap OK to open Settings, find 'Screen Time Tracker' and enable it.")
             .setPositiveButton("Open Settings") { _, _ ->
                 startActivity(Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS))
             }
             .setNegativeButton("Cancel", null)
-            .setCancelable(false)
             .show()
-    }
-
-    override fun onResume() {
-        super.onResume()
-        if (viewModel.repo.hasUsagePermission()) {
-            UsageCollectorWorker.schedule(this)
-            viewModel.refreshNow()
-        }
     }
 }

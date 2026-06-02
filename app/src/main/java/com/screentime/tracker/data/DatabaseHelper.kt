@@ -9,9 +9,9 @@ data class UsageRecord(
     val id: Long = 0,
     val packageName: String,
     val appName: String,
-    val date: String,        // yyyy-MM-dd
+    val date: String,
     val totalMinutes: Long,
-    val lastUpdated: Long    // epoch ms
+    val lastUpdated: Long
 )
 
 class DatabaseHelper(context: Context) :
@@ -20,7 +20,6 @@ class DatabaseHelper(context: Context) :
     companion object {
         const val DATABASE_NAME = "screen_time.db"
         const val DATABASE_VERSION = 1
-
         const val TABLE_USAGE = "usage_log"
         const val COL_ID = "_id"
         const val COL_PACKAGE = "package_name"
@@ -42,9 +41,7 @@ class DatabaseHelper(context: Context) :
                 UNIQUE($COL_PACKAGE, $COL_DATE) ON CONFLICT REPLACE
             )
         """.trimIndent())
-
         db.execSQL("CREATE INDEX idx_date ON $TABLE_USAGE ($COL_DATE)")
-        db.execSQL("CREATE INDEX idx_package ON $TABLE_USAGE ($COL_PACKAGE)")
     }
 
     override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
@@ -53,7 +50,6 @@ class DatabaseHelper(context: Context) :
     }
 
     fun upsertUsage(record: UsageRecord) {
-        val db = writableDatabase
         val values = ContentValues().apply {
             put(COL_PACKAGE, record.packageName)
             put(COL_APP_NAME, record.appName)
@@ -61,29 +57,25 @@ class DatabaseHelper(context: Context) :
             put(COL_MINUTES, record.totalMinutes)
             put(COL_UPDATED, record.lastUpdated)
         }
-        db.insertWithOnConflict(TABLE_USAGE, null, values, SQLiteDatabase.CONFLICT_REPLACE)
+        writableDatabase.insertWithOnConflict(TABLE_USAGE, null, values, SQLiteDatabase.CONFLICT_REPLACE)
     }
 
     fun getUsageForDate(date: String): List<UsageRecord> {
         val records = mutableListOf<UsageRecord>()
-        val db = readableDatabase
-        val cursor = db.query(
-            TABLE_USAGE, null,
-            "$COL_DATE = ?", arrayOf(date),
+        val cursor = readableDatabase.query(
+            TABLE_USAGE, null, "$COL_DATE = ?", arrayOf(date),
             null, null, "$COL_MINUTES DESC"
         )
         cursor.use {
             while (it.moveToNext()) {
-                records.add(
-                    UsageRecord(
-                        id = it.getLong(it.getColumnIndexOrThrow(COL_ID)),
-                        packageName = it.getString(it.getColumnIndexOrThrow(COL_PACKAGE)),
-                        appName = it.getString(it.getColumnIndexOrThrow(COL_APP_NAME)),
-                        date = it.getString(it.getColumnIndexOrThrow(COL_DATE)),
-                        totalMinutes = it.getLong(it.getColumnIndexOrThrow(COL_MINUTES)),
-                        lastUpdated = it.getLong(it.getColumnIndexOrThrow(COL_UPDATED))
-                    )
-                )
+                records.add(UsageRecord(
+                    id = it.getLong(it.getColumnIndexOrThrow(COL_ID)),
+                    packageName = it.getString(it.getColumnIndexOrThrow(COL_PACKAGE)),
+                    appName = it.getString(it.getColumnIndexOrThrow(COL_APP_NAME)),
+                    date = it.getString(it.getColumnIndexOrThrow(COL_DATE)),
+                    totalMinutes = it.getLong(it.getColumnIndexOrThrow(COL_MINUTES)),
+                    lastUpdated = it.getLong(it.getColumnIndexOrThrow(COL_UPDATED))
+                ))
             }
         }
         return records
@@ -91,24 +83,20 @@ class DatabaseHelper(context: Context) :
 
     fun getUsageForPackage(packageName: String): List<UsageRecord> {
         val records = mutableListOf<UsageRecord>()
-        val db = readableDatabase
-        val cursor = db.query(
-            TABLE_USAGE, null,
-            "$COL_PACKAGE = ?", arrayOf(packageName),
+        val cursor = readableDatabase.query(
+            TABLE_USAGE, null, "$COL_PACKAGE = ?", arrayOf(packageName),
             null, null, "$COL_DATE DESC"
         )
         cursor.use {
             while (it.moveToNext()) {
-                records.add(
-                    UsageRecord(
-                        id = it.getLong(it.getColumnIndexOrThrow(COL_ID)),
-                        packageName = it.getString(it.getColumnIndexOrThrow(COL_PACKAGE)),
-                        appName = it.getString(it.getColumnIndexOrThrow(COL_APP_NAME)),
-                        date = it.getString(it.getColumnIndexOrThrow(COL_DATE)),
-                        totalMinutes = it.getLong(it.getColumnIndexOrThrow(COL_MINUTES)),
-                        lastUpdated = it.getLong(it.getColumnIndexOrThrow(COL_UPDATED))
-                    )
-                )
+                records.add(UsageRecord(
+                    id = it.getLong(it.getColumnIndexOrThrow(COL_ID)),
+                    packageName = it.getString(it.getColumnIndexOrThrow(COL_PACKAGE)),
+                    appName = it.getString(it.getColumnIndexOrThrow(COL_APP_NAME)),
+                    date = it.getString(it.getColumnIndexOrThrow(COL_DATE)),
+                    totalMinutes = it.getLong(it.getColumnIndexOrThrow(COL_MINUTES)),
+                    lastUpdated = it.getLong(it.getColumnIndexOrThrow(COL_UPDATED))
+                ))
             }
         }
         return records
@@ -116,23 +104,20 @@ class DatabaseHelper(context: Context) :
 
     fun getAllRecords(): List<UsageRecord> {
         val records = mutableListOf<UsageRecord>()
-        val db = readableDatabase
-        val cursor = db.query(
+        val cursor = readableDatabase.query(
             TABLE_USAGE, null, null, null,
             null, null, "$COL_DATE DESC, $COL_MINUTES DESC"
         )
         cursor.use {
             while (it.moveToNext()) {
-                records.add(
-                    UsageRecord(
-                        id = it.getLong(it.getColumnIndexOrThrow(COL_ID)),
-                        packageName = it.getString(it.getColumnIndexOrThrow(COL_PACKAGE)),
-                        appName = it.getString(it.getColumnIndexOrThrow(COL_APP_NAME)),
-                        date = it.getString(it.getColumnIndexOrThrow(COL_DATE)),
-                        totalMinutes = it.getLong(it.getColumnIndexOrThrow(COL_MINUTES)),
-                        lastUpdated = it.getLong(it.getColumnIndexOrThrow(COL_UPDATED))
-                    )
-                )
+                records.add(UsageRecord(
+                    id = it.getLong(it.getColumnIndexOrThrow(COL_ID)),
+                    packageName = it.getString(it.getColumnIndexOrThrow(COL_PACKAGE)),
+                    appName = it.getString(it.getColumnIndexOrThrow(COL_APP_NAME)),
+                    date = it.getString(it.getColumnIndexOrThrow(COL_DATE)),
+                    totalMinutes = it.getLong(it.getColumnIndexOrThrow(COL_MINUTES)),
+                    lastUpdated = it.getLong(it.getColumnIndexOrThrow(COL_UPDATED))
+                ))
             }
         }
         return records
@@ -140,27 +125,17 @@ class DatabaseHelper(context: Context) :
 
     fun getAvailableDates(): List<String> {
         val dates = mutableListOf<String>()
-        val db = readableDatabase
-        val cursor = db.query(
-            true, TABLE_USAGE, arrayOf(COL_DATE),
-            null, null, COL_DATE, null, "$COL_DATE DESC", null
+        val cursor = readableDatabase.rawQuery(
+            "SELECT DISTINCT $COL_DATE FROM $TABLE_USAGE ORDER BY $COL_DATE DESC", null
         )
-        cursor.use {
-            while (it.moveToNext()) {
-                dates.add(it.getString(0))
-            }
-        }
+        cursor.use { while (it.moveToNext()) dates.add(it.getString(0)) }
         return dates
     }
 
     fun getTotalMinutesForDate(date: String): Long {
-        val db = readableDatabase
-        val cursor = db.rawQuery(
-            "SELECT SUM($COL_MINUTES) FROM $TABLE_USAGE WHERE $COL_DATE = ?",
-            arrayOf(date)
+        val cursor = readableDatabase.rawQuery(
+            "SELECT SUM($COL_MINUTES) FROM $TABLE_USAGE WHERE $COL_DATE = ?", arrayOf(date)
         )
-        return cursor.use {
-            if (it.moveToFirst()) it.getLong(0) else 0L
-        }
+        return cursor.use { if (it.moveToFirst()) it.getLong(0) else 0L }
     }
 }

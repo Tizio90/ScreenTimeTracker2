@@ -12,22 +12,16 @@ class HistoryAdapter(
     private val repo: UsageRepository
 ) : RecyclerView.Adapter<HistoryAdapter.ViewHolder>() {
 
-    inner class ViewHolder(val binding: ItemHistoryBinding) :
-        RecyclerView.ViewHolder(binding.root)
+    inner class ViewHolder(val binding: ItemHistoryBinding) : RecyclerView.ViewHolder(binding.root)
 
-    override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): ViewHolder {
-        val binding = ItemHistoryBinding.inflate(
-            LayoutInflater.from(parent.context), parent, false
-        )
-        return ViewHolder(binding)
-    }
+    override fun onCreateViewHolder(parent: ViewGroup, viewType: Int) = ViewHolder(
+        ItemHistoryBinding.inflate(LayoutInflater.from(parent.context), parent, false)
+    )
 
     override fun onBindViewHolder(holder: ViewHolder, position: Int) {
         val record = records[position]
-        holder.binding.apply {
-            dateText.text = record.date
-            timeText.text = repo.formatMinutes(record.totalMinutes)
-        }
+        holder.binding.dateText.text = record.date
+        holder.binding.timeText.text = repo.formatMinutes(record.totalMinutes)
     }
 
     override fun getItemCount() = records.size

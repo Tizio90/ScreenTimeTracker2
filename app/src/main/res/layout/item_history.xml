@@ -4,8 +4,10 @@
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
     android:orientation="horizontal"
+    android:background="@color/colorWhite"
     android:paddingHorizontal="16dp"
-    android:paddingVertical="12dp">
+    android:paddingVertical="12dp"
+    android:layout_marginBottom="2dp">
 
     <TextView
         android:id="@+id/dateText"
@@ -20,6 +22,6 @@
         android:layout_height="wrap_content"
         android:textSize="15sp"
         android:textStyle="bold"
-        android:textColor="?attr/colorPrimary"/>
+        android:textColor="@color/colorPrimary"/>
 
 </LinearLayout>

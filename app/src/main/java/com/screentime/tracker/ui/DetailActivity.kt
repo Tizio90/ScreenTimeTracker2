@@ -24,7 +24,6 @@ class DetailActivity : AppCompatActivity() {
         val packageName = intent.getStringExtra(EXTRA_PACKAGE) ?: return
         val appName = intent.getStringExtra(EXTRA_APP_NAME) ?: packageName
 
-        setSupportActionBar(binding.toolbar)
         supportActionBar?.apply {
             title = appName
             setDisplayHomeAsUpEnabled(true)
@@ -32,30 +31,19 @@ class DetailActivity : AppCompatActivity() {
 
         val repo = UsageRepository(this)
         val records = repo.getUsageForPackage(packageName)
-
-        // Build summary text
         val totalMinutes = records.sumOf { it.totalMinutes }
         val avgMinutes = if (records.isNotEmpty()) totalMinutes / records.size else 0L
 
-        binding.summaryText.text = buildString {
-            appendLine("📅 Days tracked: ${records.size}")
-            appendLine("⏱ Total time: ${repo.formatMinutes(totalMinutes)}")
-            append("📊 Daily average: ${repo.formatMinutes(avgMinutes)}")
-        }
+        binding.summaryText.text = "Days tracked: ${records.size}\n" +
+            "Total time: ${repo.formatMinutes(totalMinutes)}\n" +
+            "Daily average: ${repo.formatMinutes(avgMinutes)}"
 
-        // Simple list of date → time
-        val adapter = HistoryAdapter(records, repo)
-        binding.historyRecycler.apply {
-            layoutManager = LinearLayoutManager(this@DetailActivity)
-            this.adapter = adapter
-        }
+        binding.historyRecycler.layoutManager = LinearLayoutManager(this)
+        binding.historyRecycler.adapter = HistoryAdapter(records, repo)
     }
 
     override fun onOptionsItemSelected(item: MenuItem): Boolean {
-        if (item.itemId == android.R.id.home) {
-            finish()
-            return true
-        }
+        if (item.itemId == android.R.id.home) { finish(); return true }
         return super.onOptionsItemSelected(item)
     }
 }
