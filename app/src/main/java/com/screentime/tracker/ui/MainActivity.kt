@@ -11,6 +11,7 @@ import android.widget.Toast
 import androidx.activity.viewModels
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
+import androidx.appcompat.app.AppCompatDelegate
 import androidx.recyclerview.widget.LinearLayoutManager
 import com.screentime.tracker.R
 import com.screentime.tracker.databinding.ActivityMainBinding
@@ -48,6 +49,12 @@ class MainActivity : AppCompatActivity() {
         viewModel.selectedDate.observe(this) { date ->
             binding.dateText.text = date
         }
+        viewModel.peakHour.observe(this) { hour ->
+            val dayStart = viewModel.repo.prefs.dayStartHour
+            val dayStartStr = viewModel.repo.formatHour(dayStart)
+            val peakStr = if (hour != null) "  •  Peak: ${viewModel.repo.formatHour(hour)}" else ""
+            binding.peakHourText.text = "Day starts $dayStartStr$peakStr"
+        }
         viewModel.availableDates.observe(this) { dates ->
             if (dates.isEmpty()) { Toast.makeText(this, "No history yet", Toast.LENGTH_SHORT).show(); return@observe }
             AlertDialog.Builder(this)
@@ -63,6 +70,11 @@ class MainActivity : AppCompatActivity() {
         }
         binding.btnToday.setOnClickListener { viewModel.loadToday() }
         binding.btnPickDate.setOnClickListener { viewModel.loadAvailableDates() }
+        binding.btnHourly.setOnClickListener {
+            startActivity(Intent(this, HourlyActivity::class.java).apply {
+                putExtra(HourlyActivity.EXTRA_DATE, viewModel.selectedDate.value ?: viewModel.repo.getTodayDate())
+            })
+        }
         binding.btnWeekly.setOnClickListener {
             startActivity(Intent(this, SummaryActivity::class.java).apply {
                 putExtra(SummaryActivity.EXTRA_MODE, SummaryActivity.MODE_WEEKLY)
@@ -100,9 +112,45 @@ class MainActivity : AppCompatActivity() {
                 }
                 true
             }
+            R.id.action_day_start -> {
+                showDayStartPicker()
+                true
+            }
+            R.id.action_dark_mode -> {
+                val current = AppCompatDelegate.getDefaultNightMode()
+                val next = if (current == AppCompatDelegate.MODE_NIGHT_YES)
+                    AppCompatDelegate.MODE_NIGHT_NO else AppCompatDelegate.MODE_NIGHT_YES
+                AppCompatDelegate.setDefaultNightMode(next)
+                true
+            }
+            R.id.action_categories -> {
+                startActivity(Intent(this, CategoriesActivity::class.java))
+                true
+            }
             R.id.action_permission -> { startActivity(Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS)); true }
             else -> super.onOptionsItemSelected(item)
         }
+    }
+
+    private fun showDayStartPicker() {
+        val currentHour = viewModel.repo.prefs.dayStartHour
+        // Build hour options 0-23
+        val hours = (0..23).map { h ->
+            val label = viewModel.repo.formatHour(h)
+            if (h == 0) "$label (midnight — default)" else label
+        }.toTypedArray()
+
+        AlertDialog.Builder(this)
+            .setTitle("Day Starts At...")
+            .setSingleChoiceItems(hours, currentHour) { dialog, which ->
+                viewModel.repo.prefs.dayStartHour = which
+                viewModel.refreshNow()
+                val label = viewModel.repo.formatHour(which)
+                Toast.makeText(this, "Day now starts at $label", Toast.LENGTH_SHORT).show()
+                dialog.dismiss()
+            }
+            .setNegativeButton("Cancel", null)
+            .show()
     }
 
     private fun showPermissionDialog() {

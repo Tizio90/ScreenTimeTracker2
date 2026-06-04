@@ -4,6 +4,7 @@ import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.MutableLiveData
 import androidx.lifecycle.viewModelScope
+import com.screentime.tracker.data.HourlyRecord
 import com.screentime.tracker.data.UsageRecord
 import com.screentime.tracker.data.UsageRepository
 import kotlinx.coroutines.Dispatchers
@@ -20,6 +21,8 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     val weeklyData = MutableLiveData<List<Pair<String, Long>>>()
     val monthlyData = MutableLiveData<List<Pair<String, Long>>>()
     val categoryData = MutableLiveData<Map<String, Long>>()
+    val hourlyData = MutableLiveData<List<HourlyRecord>>()
+    val peakHour = MutableLiveData<Int?>()
 
     init { loadToday() }
 
@@ -31,25 +34,21 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             usageList.postValue(repo.getUsageForDate(date))
             totalMinutes.postValue(repo.getTotalMinutesForDate(date))
             categoryData.postValue(repo.getCategoryTotalsForDate(date))
+            hourlyData.postValue(repo.getHourlyForDate(date))
+            peakHour.postValue(repo.getPeakHour(date))
         }
     }
 
     fun loadAvailableDates() {
-        viewModelScope.launch(Dispatchers.IO) {
-            availableDates.postValue(repo.getAvailableDates())
-        }
+        viewModelScope.launch(Dispatchers.IO) { availableDates.postValue(repo.getAvailableDates()) }
     }
 
     fun loadWeeklyData() {
-        viewModelScope.launch(Dispatchers.IO) {
-            weeklyData.postValue(repo.getWeeklyData())
-        }
+        viewModelScope.launch(Dispatchers.IO) { weeklyData.postValue(repo.getWeeklyData()) }
     }
 
     fun loadMonthlyData() {
-        viewModelScope.launch(Dispatchers.IO) {
-            monthlyData.postValue(repo.getMonthlyData())
-        }
+        viewModelScope.launch(Dispatchers.IO) { monthlyData.postValue(repo.getMonthlyData()) }
     }
 
     fun refreshNow() {
@@ -59,6 +58,8 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             usageList.postValue(repo.getUsageForDate(date))
             totalMinutes.postValue(repo.getTotalMinutesForDate(date))
             categoryData.postValue(repo.getCategoryTotalsForDate(date))
+            hourlyData.postValue(repo.getHourlyForDate(date))
+            peakHour.postValue(repo.getPeakHour(date))
         }
     }
 

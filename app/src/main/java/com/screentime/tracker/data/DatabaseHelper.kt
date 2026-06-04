@@ -14,6 +14,11 @@ data class UsageRecord(
     val lastUpdated: Long
 )
 
+data class HourlyRecord(
+    val hour: Int,       // 0-23
+    val minutes: Long
+)
+
 data class AppMeta(
     val packageName: String,
     val customName: String?,
@@ -25,7 +30,7 @@ class DatabaseHelper(context: Context) :
 
     companion object {
         const val DATABASE_NAME = "screen_time.db"
-        const val DATABASE_VERSION = 2
+        const val DATABASE_VERSION = 3
 
         const val TABLE_USAGE = "usage_log"
         const val COL_ID = "_id"
@@ -39,7 +44,13 @@ class DatabaseHelper(context: Context) :
         const val COL_CUSTOM_NAME = "custom_name"
         const val COL_CATEGORY = "category"
 
-        val CATEGORIES = listOf(
+        const val TABLE_HOURLY = "hourly_log"
+        const val COL_HOUR = "hour"
+
+        const val TABLE_CUSTOM_CATEGORIES = "custom_categories"
+        const val COL_CAT_NAME = "name"
+
+        val DEFAULT_CATEGORIES = listOf(
             "Uncategorized", "Social", "Games", "Productivity",
             "Entertainment", "Browser", "Health", "Finance", "Other"
         )
@@ -66,20 +77,47 @@ class DatabaseHelper(context: Context) :
                 $COL_CATEGORY TEXT NOT NULL DEFAULT 'Uncategorized'
             )
         """.trimIndent())
+
+        db.execSQL("""
+            CREATE TABLE $TABLE_HOURLY (
+                $COL_ID INTEGER PRIMARY KEY AUTOINCREMENT,
+                $COL_DATE TEXT NOT NULL,
+                $COL_HOUR INTEGER NOT NULL,
+                $COL_MINUTES INTEGER NOT NULL DEFAULT 0,
+                UNIQUE($COL_DATE, $COL_HOUR) ON CONFLICT REPLACE
+            )
+        """.trimIndent())
+
+        db.execSQL("""
+            CREATE TABLE $TABLE_CUSTOM_CATEGORIES (
+                $COL_CAT_NAME TEXT PRIMARY KEY
+            )
+        """.trimIndent())
     }
 
     override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
         if (oldVersion < 2) {
-            db.execSQL("""
-                CREATE TABLE IF NOT EXISTS $TABLE_META (
-                    $COL_PACKAGE TEXT PRIMARY KEY,
-                    $COL_CUSTOM_NAME TEXT,
-                    $COL_CATEGORY TEXT NOT NULL DEFAULT 'Uncategorized'
-                )
-            """.trimIndent())
+            db.execSQL("""CREATE TABLE IF NOT EXISTS $TABLE_META (
+                $COL_PACKAGE TEXT PRIMARY KEY,
+                $COL_CUSTOM_NAME TEXT,
+                $COL_CATEGORY TEXT NOT NULL DEFAULT 'Uncategorized'
+            )""")
+        }
+        if (oldVersion < 3) {
+            db.execSQL("""CREATE TABLE IF NOT EXISTS $TABLE_HOURLY (
+                $COL_ID INTEGER PRIMARY KEY AUTOINCREMENT,
+                $COL_DATE TEXT NOT NULL,
+                $COL_HOUR INTEGER NOT NULL,
+                $COL_MINUTES INTEGER NOT NULL DEFAULT 0,
+                UNIQUE($COL_DATE, $COL_HOUR) ON CONFLICT REPLACE
+            )""")
+            db.execSQL("""CREATE TABLE IF NOT EXISTS $TABLE_CUSTOM_CATEGORIES (
+                $COL_CAT_NAME TEXT PRIMARY KEY
+            )""")
         }
     }
 
+    // ── Usage ──────────────────────────────────────────────
     fun upsertUsage(record: UsageRecord) {
         val values = ContentValues().apply {
             put(COL_PACKAGE, record.packageName)
@@ -91,6 +129,81 @@ class DatabaseHelper(context: Context) :
         writableDatabase.insertWithOnConflict(TABLE_USAGE, null, values, SQLiteDatabase.CONFLICT_REPLACE)
     }
 
+    private fun rowToRecord(c: android.database.Cursor) = UsageRecord(
+        id = c.getLong(c.getColumnIndexOrThrow(COL_ID)),
+        packageName = c.getString(c.getColumnIndexOrThrow(COL_PACKAGE)),
+        appName = c.getString(c.getColumnIndexOrThrow(COL_APP_NAME)),
+        date = c.getString(c.getColumnIndexOrThrow(COL_DATE)),
+        totalMinutes = c.getLong(c.getColumnIndexOrThrow(COL_MINUTES)),
+        lastUpdated = c.getLong(c.getColumnIndexOrThrow(COL_UPDATED))
+    )
+
+    fun getUsageForDate(date: String): List<UsageRecord> {
+        val r = mutableListOf<UsageRecord>()
+        val c = readableDatabase.query(TABLE_USAGE, null, "$COL_DATE=?", arrayOf(date), null, null, "$COL_MINUTES DESC")
+        c.use { while (it.moveToNext()) r.add(rowToRecord(it)) }
+        return r
+    }
+
+    fun getUsageForPackage(pkg: String): List<UsageRecord> {
+        val r = mutableListOf<UsageRecord>()
+        val c = readableDatabase.query(TABLE_USAGE, null, "$COL_PACKAGE=?", arrayOf(pkg), null, null, "$COL_DATE DESC")
+        c.use { while (it.moveToNext()) r.add(rowToRecord(it)) }
+        return r
+    }
+
+    fun getAllRecords(): List<UsageRecord> {
+        val r = mutableListOf<UsageRecord>()
+        val c = readableDatabase.query(TABLE_USAGE, null, null, null, null, null, "$COL_DATE DESC, $COL_MINUTES DESC")
+        c.use { while (it.moveToNext()) r.add(rowToRecord(it)) }
+        return r
+    }
+
+    fun getAvailableDates(): List<String> {
+        val dates = mutableListOf<String>()
+        val c = readableDatabase.rawQuery("SELECT DISTINCT $COL_DATE FROM $TABLE_USAGE ORDER BY $COL_DATE DESC", null)
+        c.use { while (it.moveToNext()) dates.add(it.getString(0)) }
+        return dates
+    }
+
+    fun getTotalMinutesForDate(date: String): Long {
+        val c = readableDatabase.rawQuery("SELECT SUM($COL_MINUTES) FROM $TABLE_USAGE WHERE $COL_DATE=?", arrayOf(date))
+        return c.use { if (it.moveToFirst()) it.getLong(0) else 0L }
+    }
+
+    fun getDailyTotals(startDate: String, endDate: String): List<Pair<String, Long>> {
+        val r = mutableListOf<Pair<String, Long>>()
+        val c = readableDatabase.rawQuery(
+            "SELECT $COL_DATE, SUM($COL_MINUTES) FROM $TABLE_USAGE WHERE $COL_DATE>=? AND $COL_DATE<=? GROUP BY $COL_DATE ORDER BY $COL_DATE ASC",
+            arrayOf(startDate, endDate)
+        )
+        c.use { while (it.moveToNext()) r.add(Pair(it.getString(0), it.getLong(1))) }
+        return r
+    }
+
+    // ── Hourly ─────────────────────────────────────────────
+    fun upsertHourly(date: String, hour: Int, minutes: Long) {
+        val values = ContentValues().apply {
+            put(COL_DATE, date); put(COL_HOUR, hour); put(COL_MINUTES, minutes)
+        }
+        writableDatabase.insertWithOnConflict(TABLE_HOURLY, null, values, SQLiteDatabase.CONFLICT_REPLACE)
+    }
+
+    fun getHourlyForDate(date: String): List<HourlyRecord> {
+        val r = mutableListOf<HourlyRecord>()
+        val c = readableDatabase.query(TABLE_HOURLY, null, "$COL_DATE=?", arrayOf(date), null, null, "$COL_HOUR ASC")
+        c.use { while (it.moveToNext()) r.add(HourlyRecord(it.getInt(it.getColumnIndexOrThrow(COL_HOUR)), it.getLong(it.getColumnIndexOrThrow(COL_MINUTES)))) }
+        return r
+    }
+
+    fun getAllTimeHourlyTotals(): List<HourlyRecord> {
+        val r = mutableListOf<HourlyRecord>()
+        val c = readableDatabase.rawQuery("SELECT $COL_HOUR, SUM($COL_MINUTES) FROM $TABLE_HOURLY GROUP BY $COL_HOUR ORDER BY $COL_HOUR ASC", null)
+        c.use { while (it.moveToNext()) r.add(HourlyRecord(it.getInt(0), it.getLong(1))) }
+        return r
+    }
+
+    // ── App Meta ───────────────────────────────────────────
     fun saveAppMeta(packageName: String, customName: String?, category: String) {
         val values = ContentValues().apply {
             put(COL_PACKAGE, packageName)
@@ -101,110 +214,41 @@ class DatabaseHelper(context: Context) :
     }
 
     fun getAppMeta(packageName: String): AppMeta {
-        val cursor = readableDatabase.query(
-            TABLE_META, null, "$COL_PACKAGE = ?", arrayOf(packageName),
-            null, null, null
-        )
-        return cursor.use {
-            if (it.moveToFirst()) {
-                AppMeta(
-                    packageName = packageName,
-                    customName = it.getString(it.getColumnIndexOrThrow(COL_CUSTOM_NAME)),
-                    category = it.getString(it.getColumnIndexOrThrow(COL_CATEGORY))
-                )
-            } else AppMeta(packageName, null, "Uncategorized")
+        val c = readableDatabase.query(TABLE_META, null, "$COL_PACKAGE=?", arrayOf(packageName), null, null, null)
+        return c.use {
+            if (it.moveToFirst()) AppMeta(packageName, it.getString(it.getColumnIndexOrThrow(COL_CUSTOM_NAME)), it.getString(it.getColumnIndexOrThrow(COL_CATEGORY)))
+            else AppMeta(packageName, null, "Uncategorized")
         }
     }
 
     fun getAllMeta(): Map<String, AppMeta> {
         val map = mutableMapOf<String, AppMeta>()
-        val cursor = readableDatabase.query(TABLE_META, null, null, null, null, null, null)
-        cursor.use {
-            while (it.moveToNext()) {
-                val pkg = it.getString(it.getColumnIndexOrThrow(COL_PACKAGE))
-                map[pkg] = AppMeta(
-                    packageName = pkg,
-                    customName = it.getString(it.getColumnIndexOrThrow(COL_CUSTOM_NAME)),
-                    category = it.getString(it.getColumnIndexOrThrow(COL_CATEGORY))
-                )
-            }
-        }
+        val c = readableDatabase.query(TABLE_META, null, null, null, null, null, null)
+        c.use { while (it.moveToNext()) {
+            val pkg = it.getString(it.getColumnIndexOrThrow(COL_PACKAGE))
+            map[pkg] = AppMeta(pkg, it.getString(it.getColumnIndexOrThrow(COL_CUSTOM_NAME)), it.getString(it.getColumnIndexOrThrow(COL_CATEGORY)))
+        }}
         return map
     }
 
-    private fun rowToRecord(cursor: android.database.Cursor) = UsageRecord(
-        id = cursor.getLong(cursor.getColumnIndexOrThrow(COL_ID)),
-        packageName = cursor.getString(cursor.getColumnIndexOrThrow(COL_PACKAGE)),
-        appName = cursor.getString(cursor.getColumnIndexOrThrow(COL_APP_NAME)),
-        date = cursor.getString(cursor.getColumnIndexOrThrow(COL_DATE)),
-        totalMinutes = cursor.getLong(cursor.getColumnIndexOrThrow(COL_MINUTES)),
-        lastUpdated = cursor.getLong(cursor.getColumnIndexOrThrow(COL_UPDATED))
-    )
-
-    fun getUsageForDate(date: String): List<UsageRecord> {
-        val records = mutableListOf<UsageRecord>()
-        val cursor = readableDatabase.query(
-            TABLE_USAGE, null, "$COL_DATE = ?", arrayOf(date),
-            null, null, "$COL_MINUTES DESC"
-        )
-        cursor.use { while (it.moveToNext()) records.add(rowToRecord(it)) }
-        return records
+    // ── Custom Categories ──────────────────────────────────
+    fun addCustomCategory(name: String) {
+        val values = ContentValues().apply { put(COL_CAT_NAME, name.trim()) }
+        writableDatabase.insertWithOnConflict(TABLE_CUSTOM_CATEGORIES, null, values, SQLiteDatabase.CONFLICT_IGNORE)
     }
 
-    fun getUsageForPackage(packageName: String): List<UsageRecord> {
-        val records = mutableListOf<UsageRecord>()
-        val cursor = readableDatabase.query(
-            TABLE_USAGE, null, "$COL_PACKAGE = ?", arrayOf(packageName),
-            null, null, "$COL_DATE DESC"
-        )
-        cursor.use { while (it.moveToNext()) records.add(rowToRecord(it)) }
-        return records
+    fun deleteCustomCategory(name: String) {
+        writableDatabase.delete(TABLE_CUSTOM_CATEGORIES, "$COL_CAT_NAME=?", arrayOf(name))
     }
 
-    fun getAllRecords(): List<UsageRecord> {
-        val records = mutableListOf<UsageRecord>()
-        val cursor = readableDatabase.query(
-            TABLE_USAGE, null, null, null,
-            null, null, "$COL_DATE DESC, $COL_MINUTES DESC"
-        )
-        cursor.use { while (it.moveToNext()) records.add(rowToRecord(it)) }
-        return records
+    fun getCustomCategories(): List<String> {
+        val r = mutableListOf<String>()
+        val c = readableDatabase.query(TABLE_CUSTOM_CATEGORIES, null, null, null, null, null, "$COL_CAT_NAME ASC")
+        c.use { while (it.moveToNext()) r.add(it.getString(0)) }
+        return r
     }
 
-    fun getUsageForDateRange(startDate: String, endDate: String): List<UsageRecord> {
-        val records = mutableListOf<UsageRecord>()
-        val cursor = readableDatabase.query(
-            TABLE_USAGE, null,
-            "$COL_DATE >= ? AND $COL_DATE <= ?", arrayOf(startDate, endDate),
-            null, null, "$COL_DATE ASC, $COL_MINUTES DESC"
-        )
-        cursor.use { while (it.moveToNext()) records.add(rowToRecord(it)) }
-        return records
-    }
-
-    fun getDailyTotals(startDate: String, endDate: String): List<Pair<String, Long>> {
-        val results = mutableListOf<Pair<String, Long>>()
-        val cursor = readableDatabase.rawQuery(
-            "SELECT $COL_DATE, SUM($COL_MINUTES) FROM $TABLE_USAGE WHERE $COL_DATE >= ? AND $COL_DATE <= ? GROUP BY $COL_DATE ORDER BY $COL_DATE ASC",
-            arrayOf(startDate, endDate)
-        )
-        cursor.use { while (it.moveToNext()) results.add(Pair(it.getString(0), it.getLong(1))) }
-        return results
-    }
-
-    fun getAvailableDates(): List<String> {
-        val dates = mutableListOf<String>()
-        val cursor = readableDatabase.rawQuery(
-            "SELECT DISTINCT $COL_DATE FROM $TABLE_USAGE ORDER BY $COL_DATE DESC", null
-        )
-        cursor.use { while (it.moveToNext()) dates.add(it.getString(0)) }
-        return dates
-    }
-
-    fun getTotalMinutesForDate(date: String): Long {
-        val cursor = readableDatabase.rawQuery(
-            "SELECT SUM($COL_MINUTES) FROM $TABLE_USAGE WHERE $COL_DATE = ?", arrayOf(date)
-        )
-        return cursor.use { if (it.moveToFirst()) it.getLong(0) else 0L }
+    fun getAllCategories(): List<String> {
+        return DEFAULT_CATEGORIES + getCustomCategories()
     }
 }

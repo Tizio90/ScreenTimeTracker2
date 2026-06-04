@@ -4,7 +4,7 @@
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:orientation="vertical"
-    android:background="#F5F5F5">
+    android:background="?attr/colorBackgroundFloating">
 
     <LinearLayout
         android:layout_width="match_parent"
@@ -22,13 +22,28 @@
             android:textStyle="bold"
             android:textColor="#FFFFFF"/>
 
-        <TextView
-            android:id="@+id/dateText"
-            android:layout_width="wrap_content"
+        <LinearLayout
+            android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="2dp"
-            android:textSize="13sp"
-            android:textColor="#CCFFFFFF"/>
+            android:orientation="horizontal"
+            android:layout_marginTop="2dp">
+
+            <TextView
+                android:id="@+id/dateText"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:textSize="13sp"
+                android:textColor="#CCFFFFFF"/>
+
+            <TextView
+                android:id="@+id/peakHourText"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:textSize="13sp"
+                android:textColor="#CCFFFFFF"/>
+
+        </LinearLayout>
 
         <LinearLayout
             android:layout_width="match_parent"
@@ -37,27 +52,33 @@
             android:orientation="horizontal">
 
             <Button android:id="@+id/btnToday"
-                android:layout_width="0dp" android:layout_height="36dp"
-                android:layout_weight="1" android:layout_marginEnd="4dp"
-                android:text="Today" android:textSize="12sp"
+                android:layout_width="0dp" android:layout_height="34dp"
+                android:layout_weight="1" android:layout_marginEnd="3dp"
+                android:text="Today" android:textSize="11sp"
                 android:textColor="@color/colorPrimary" android:background="#FFFFFF"/>
 
             <Button android:id="@+id/btnPickDate"
-                android:layout_width="0dp" android:layout_height="36dp"
-                android:layout_weight="1" android:layout_marginHorizontal="4dp"
-                android:text="History" android:textSize="12sp"
+                android:layout_width="0dp" android:layout_height="34dp"
+                android:layout_weight="1" android:layout_marginHorizontal="3dp"
+                android:text="History" android:textSize="11sp"
+                android:textColor="@color/colorPrimary" android:background="#FFFFFF"/>
+
+            <Button android:id="@+id/btnHourly"
+                android:layout_width="0dp" android:layout_height="34dp"
+                android:layout_weight="1" android:layout_marginHorizontal="3dp"
+                android:text="Hourly" android:textSize="11sp"
                 android:textColor="@color/colorPrimary" android:background="#FFFFFF"/>
 
             <Button android:id="@+id/btnWeekly"
-                android:layout_width="0dp" android:layout_height="36dp"
-                android:layout_weight="1" android:layout_marginHorizontal="4dp"
-                android:text="Week" android:textSize="12sp"
+                android:layout_width="0dp" android:layout_height="34dp"
+                android:layout_weight="1" android:layout_marginHorizontal="3dp"
+                android:text="Week" android:textSize="11sp"
                 android:textColor="@color/colorPrimary" android:background="#FFFFFF"/>
 
             <Button android:id="@+id/btnMonthly"
-                android:layout_width="0dp" android:layout_height="36dp"
-                android:layout_weight="1" android:layout_marginStart="4dp"
-                android:text="Month" android:textSize="12sp"
+                android:layout_width="0dp" android:layout_height="34dp"
+                android:layout_weight="1" android:layout_marginStart="3dp"
+                android:text="Month" android:textSize="11sp"
                 android:textColor="@color/colorPrimary" android:background="#FFFFFF"/>
 
         </LinearLayout>
@@ -71,7 +92,7 @@
         android:gravity="center"
         android:text="No data yet.\nTap Refresh to collect stats."
         android:visibility="gone"
-        android:textColor="@color/colorGray"/>
+        android:textColor="?android:attr/textColorSecondary"/>
 
     <androidx.recyclerview.widget.RecyclerView
         android:id="@+id/recyclerView"

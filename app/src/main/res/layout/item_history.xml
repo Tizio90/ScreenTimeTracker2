@@ -4,7 +4,7 @@
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
     android:orientation="horizontal"
-    android:background="@color/colorWhite"
+    android:background="?attr/colorBackgroundFloating"
     android:paddingHorizontal="16dp"
     android:paddingVertical="12dp"
     android:layout_marginBottom="2dp">
@@ -14,7 +14,8 @@
         android:layout_width="0dp"
         android:layout_height="wrap_content"
         android:layout_weight="1"
-        android:textSize="15sp"/>
+        android:textSize="15sp"
+        android:textColor="?android:attr/textColorPrimary"/>
 
     <TextView
         android:id="@+id/timeText"

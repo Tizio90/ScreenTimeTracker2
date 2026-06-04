@@ -27,6 +27,12 @@
         <activity android:name=".ui.SummaryActivity" android:exported="false"
             android:parentActivityName=".ui.MainActivity"/>
 
+        <activity android:name=".ui.HourlyActivity" android:exported="false"
+            android:parentActivityName=".ui.MainActivity"/>
+
+        <activity android:name=".ui.CategoriesActivity" android:exported="false"
+            android:parentActivityName=".ui.MainActivity"/>
+
         <receiver android:name=".service.BootReceiver" android:exported="true">
             <intent-filter>
                 <action android:name="android.intent.action.BOOT_COMPLETED"/>
