@@ -41,7 +41,7 @@ class DetailActivity : AppCompatActivity() {
             }
             AlertDialog.Builder(this)
                 .setTitle("Rename App")
-                .setMessage("This name will be used everywhere including CSV exports.")
+                .setMessage("Saved permanently, used in app and CSV exports.")
                 .setView(input)
                 .setPositiveButton("Save") { _, _ ->
                     val newName = input.text.toString().trim()
@@ -66,9 +66,6 @@ class DetailActivity : AppCompatActivity() {
                 }
                 .setNegativeButton("Cancel", null).show()
         }
-
-        binding.historyRecycler.layoutManager = LinearLayoutManager(this)
-        binding.historyRecycler.adapter = HistoryAdapter(repo.getUsageForPackage(packageName), repo)
     }
 
     private fun refreshUI() {
@@ -76,16 +73,26 @@ class DetailActivity : AppCompatActivity() {
         val displayName = meta.customName?.takeIf { it.isNotBlank() } ?: originalName
         supportActionBar?.title = displayName
 
-        val records = repo.getUsageForPackage(packageName)
-        val totalMinutes = records.sumOf { it.totalMinutes }
-        val avgMinutes = if (records.isNotEmpty()) totalMinutes / records.size else 0L
+        val sessions = repo.getSessionsForPackage(packageName)
+        val totalMinutes = sessions.sumOf { it.durationMinutes }
+        val avgPerDay = if (sessions.isNotEmpty()) {
+            val distinctDays = sessions.map { it.date }.toSet().size
+            if (distinctDays > 0) totalMinutes / distinctDays else 0L
+        } else 0L
+        val longestSession = sessions.maxByOrNull { it.durationMinutes }
 
         binding.summaryText.text =
             "📦 $packageName\n" +
             "📁 Category: ${meta.category}\n" +
-            "📅 Days tracked: ${records.size}\n" +
-            "⏱ Total: ${repo.formatMinutes(totalMinutes)}\n" +
-            "📊 Daily avg: ${repo.formatMinutes(avgMinutes)}"
+            "📅 Days tracked: ${sessions.map { it.date }.toSet().size}\n" +
+            "🔢 Total sessions: ${sessions.size}\n" +
+            "⏱ Total time: ${repo.formatMinutes(totalMinutes)}\n" +
+            "📊 Avg per day: ${repo.formatMinutes(avgPerDay)}\n" +
+            (longestSession?.let { "🏆 Longest session: ${repo.formatMinutes(it.durationMinutes)} (${it.date} ${it.startTime})" } ?: "")
+
+        // Show session list
+        binding.historyRecycler.layoutManager = LinearLayoutManager(this)
+        binding.historyRecycler.adapter = SessionAdapter(sessions, repo)
     }
 
     override fun onOptionsItemSelected(item: MenuItem): Boolean {

@@ -39,7 +39,7 @@ class MainActivity : AppCompatActivity() {
         binding.recyclerView.layoutManager = LinearLayoutManager(this)
         binding.recyclerView.adapter = adapter
 
-        viewModel.usageList.observe(this) { records ->
+        viewModel.dailyList.observe(this) { records ->
             adapter.submitList(records)
             binding.emptyView.visibility = if (records.isEmpty()) View.VISIBLE else View.GONE
         }
@@ -103,30 +103,22 @@ class MainActivity : AppCompatActivity() {
     override fun onOptionsItemSelected(item: MenuItem): Boolean {
         return when (item.itemId) {
             R.id.action_export -> {
-                val records = viewModel.repo.getAllRecords()
-                if (records.isEmpty()) Toast.makeText(this, "No data to export yet", Toast.LENGTH_SHORT).show()
+                val sessions = viewModel.repo.getAllSessions()
+                if (sessions.isEmpty()) Toast.makeText(this, "No data to export yet", Toast.LENGTH_SHORT).show()
                 else {
-                    val intent = CsvExporter.export(this, records, viewModel.repo)
+                    val intent = CsvExporter.export(this, sessions, viewModel.repo)
                     if (intent != null) startActivity(Intent.createChooser(intent, "Export CSV"))
                     else Toast.makeText(this, "Export failed", Toast.LENGTH_SHORT).show()
                 }
                 true
             }
-            R.id.action_day_start -> {
-                showDayStartPicker()
-                true
-            }
+            R.id.action_day_start -> { showDayStartPicker(); true }
             R.id.action_dark_mode -> {
-                val current = AppCompatDelegate.getDefaultNightMode()
-                val next = if (current == AppCompatDelegate.MODE_NIGHT_YES)
+                val next = if (AppCompatDelegate.getDefaultNightMode() == AppCompatDelegate.MODE_NIGHT_YES)
                     AppCompatDelegate.MODE_NIGHT_NO else AppCompatDelegate.MODE_NIGHT_YES
-                AppCompatDelegate.setDefaultNightMode(next)
-                true
+                AppCompatDelegate.setDefaultNightMode(next); true
             }
-            R.id.action_categories -> {
-                startActivity(Intent(this, CategoriesActivity::class.java))
-                true
-            }
+            R.id.action_categories -> { startActivity(Intent(this, CategoriesActivity::class.java)); true }
             R.id.action_permission -> { startActivity(Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS)); true }
             else -> super.onOptionsItemSelected(item)
         }
@@ -134,23 +126,19 @@ class MainActivity : AppCompatActivity() {
 
     private fun showDayStartPicker() {
         val currentHour = viewModel.repo.prefs.dayStartHour
-        // Build hour options 0-23
         val hours = (0..23).map { h ->
             val label = viewModel.repo.formatHour(h)
             if (h == 0) "$label (midnight — default)" else label
         }.toTypedArray()
-
         AlertDialog.Builder(this)
             .setTitle("Day Starts At...")
             .setSingleChoiceItems(hours, currentHour) { dialog, which ->
                 viewModel.repo.prefs.dayStartHour = which
                 viewModel.refreshNow()
-                val label = viewModel.repo.formatHour(which)
-                Toast.makeText(this, "Day now starts at $label", Toast.LENGTH_SHORT).show()
+                Toast.makeText(this, "Day now starts at ${viewModel.repo.formatHour(which)}", Toast.LENGTH_SHORT).show()
                 dialog.dismiss()
             }
-            .setNegativeButton("Cancel", null)
-            .show()
+            .setNegativeButton("Cancel", null).show()
     }
 
     private fun showPermissionDialog() {

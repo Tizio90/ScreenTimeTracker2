@@ -5,21 +5,21 @@ import android.view.ViewGroup
 import androidx.recyclerview.widget.DiffUtil
 import androidx.recyclerview.widget.ListAdapter
 import androidx.recyclerview.widget.RecyclerView
-import com.screentime.tracker.data.UsageRecord
+import com.screentime.tracker.data.DailyRecord
 import com.screentime.tracker.data.UsageRepository
 import com.screentime.tracker.databinding.ItemUsageBinding
 
 class UsageAdapter(
     private val repo: UsageRepository,
-    private val onClick: (UsageRecord) -> Unit
-) : ListAdapter<UsageRecord, UsageAdapter.ViewHolder>(DIFF) {
+    private val onClick: (DailyRecord) -> Unit
+) : ListAdapter<DailyRecord, UsageAdapter.ViewHolder>(DIFF) {
 
     companion object {
-        val DIFF = object : DiffUtil.ItemCallback<UsageRecord>() {
-            override fun areItemsTheSame(a: UsageRecord, b: UsageRecord) =
+        val DIFF = object : DiffUtil.ItemCallback<DailyRecord>() {
+            override fun areItemsTheSame(a: DailyRecord, b: DailyRecord) =
                 a.packageName == b.packageName && a.date == b.date
-            override fun areContentsTheSame(a: UsageRecord, b: UsageRecord) =
-                a.totalMinutes == b.totalMinutes
+            override fun areContentsTheSame(a: DailyRecord, b: DailyRecord) =
+                a.totalMinutes == b.totalMinutes && a.sessionCount == b.sessionCount
         }
     }
 
@@ -34,17 +34,15 @@ class UsageAdapter(
         val maxMinutes = getItem(0).totalMinutes.coerceAtLeast(1)
         val meta = repo.getAppMeta(record.packageName)
         val displayName = meta.customName?.takeIf { it.isNotBlank() } ?: record.appName
+        val sessions = if (record.sessionCount == 1) "1 session" else "${record.sessionCount} sessions"
+        val categoryStr = if (meta.category != "Uncategorized") "📁 ${meta.category}  •  " else ""
+
         holder.binding.apply {
             appNameText.text = displayName
-            packageText.text = if (meta.category != "Uncategorized") "📁 ${meta.category}  •  ${record.packageName}" else record.packageName
-            timeText.text = formatMinutes(record.totalMinutes)
+            packageText.text = "$categoryStr$sessions"
+            timeText.text = repo.formatMinutes(record.totalMinutes)
             usageBar.progress = ((record.totalMinutes * 100) / maxMinutes).toInt()
             root.setOnClickListener { onClick(record) }
         }
-    }
-
-    private fun formatMinutes(minutes: Long): String {
-        val h = minutes / 60; val m = minutes % 60
-        return if (h > 0) "${h}h ${m}m" else "${m}m"
     }
 }
