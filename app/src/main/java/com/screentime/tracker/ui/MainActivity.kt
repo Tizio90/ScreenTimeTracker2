@@ -28,7 +28,8 @@ class MainActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
         binding = ActivityMainBinding.inflate(layoutInflater)
         setContentView(binding.root)
-        supportActionBar?.title = "Screen Time Tracker"
+        setSupportActionBar(binding.toolbar)
+        supportActionBar?.setDisplayShowTitleEnabled(false)
 
         adapter = UsageAdapter(viewModel.repo) { record ->
             startActivity(Intent(this, DetailActivity::class.java).apply {
@@ -38,25 +39,30 @@ class MainActivity : AppCompatActivity() {
         }
         binding.recyclerView.layoutManager = LinearLayoutManager(this)
         binding.recyclerView.adapter = adapter
+        binding.recyclerView.isNestedScrollingEnabled = false
 
         viewModel.dailyList.observe(this) { records ->
             adapter.submitList(records)
             binding.emptyView.visibility = if (records.isEmpty()) View.VISIBLE else View.GONE
+            binding.recyclerView.visibility = if (records.isEmpty()) View.GONE else View.VISIBLE
         }
         viewModel.totalMinutes.observe(this) { total ->
-            binding.totalTimeText.text = "Today: ${viewModel.formatMinutes(total)}"
+            val h = total / 60; val m = total % 60
+            binding.totalTimeText.text = if (h > 0) "${h}h ${m}m" else "${m}m"
         }
         viewModel.selectedDate.observe(this) { date ->
             binding.dateText.text = date
         }
         viewModel.peakHour.observe(this) { hour ->
             val dayStart = viewModel.repo.prefs.dayStartHour
-            val dayStartStr = viewModel.repo.formatHour(dayStart)
-            val peakStr = if (hour != null) "  •  Peak: ${viewModel.repo.formatHour(hour)}" else ""
-            binding.peakHourText.text = "Day starts $dayStartStr$peakStr"
+            val peakStr = if (hour != null) "  ·  Peak ${viewModel.repo.formatHour(hour)}" else ""
+            binding.peakHourText.text = "Starts ${viewModel.repo.formatHour(dayStart)}$peakStr"
         }
         viewModel.availableDates.observe(this) { dates ->
-            if (dates.isEmpty()) { Toast.makeText(this, "No history yet", Toast.LENGTH_SHORT).show(); return@observe }
+            if (dates.isEmpty()) {
+                Toast.makeText(this, "No history yet", Toast.LENGTH_SHORT).show()
+                return@observe
+            }
             AlertDialog.Builder(this)
                 .setTitle("Select Date")
                 .setAdapter(ArrayAdapter(this, android.R.layout.simple_list_item_1, dates)) { _, which ->
@@ -66,7 +72,7 @@ class MainActivity : AppCompatActivity() {
 
         binding.fabRefresh.setOnClickListener {
             if (!viewModel.repo.hasUsagePermission()) showPermissionDialog()
-            else { Toast.makeText(this, "Refreshing...", Toast.LENGTH_SHORT).show(); viewModel.refreshNow() }
+            else { viewModel.refreshNow() }
         }
         binding.btnToday.setOnClickListener { viewModel.loadToday() }
         binding.btnPickDate.setOnClickListener { viewModel.loadAvailableDates() }
@@ -92,7 +98,10 @@ class MainActivity : AppCompatActivity() {
 
     override fun onResume() {
         super.onResume()
-        if (viewModel.repo.hasUsagePermission()) { UsageCollectorWorker.schedule(this); viewModel.refreshNow() }
+        if (viewModel.repo.hasUsagePermission()) {
+            UsageCollectorWorker.schedule(this)
+            viewModel.refreshNow()
+        }
     }
 
     override fun onCreateOptionsMenu(menu: Menu): Boolean {

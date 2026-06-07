@@ -15,9 +15,7 @@ import com.screentime.tracker.databinding.ActivityHourlyBinding
 
 class HourlyActivity : AppCompatActivity() {
 
-    companion object {
-        const val EXTRA_DATE = "extra_date"
-    }
+    companion object { const val EXTRA_DATE = "extra_date" }
 
     private lateinit var binding: ActivityHourlyBinding
     private lateinit var repo: UsageRepository
@@ -30,6 +28,7 @@ class HourlyActivity : AppCompatActivity() {
         repo = UsageRepository(this)
         val date = intent.getStringExtra(EXTRA_DATE) ?: repo.getTodayDate()
 
+        setSupportActionBar(binding.toolbar)
         supportActionBar?.apply {
             title = "Hourly Usage"
             subtitle = date
@@ -39,50 +38,54 @@ class HourlyActivity : AppCompatActivity() {
         val hourlyData = repo.getHourlyForDate(date)
 
         if (hourlyData.isEmpty()) {
-            binding.statsText.text = "No hourly data for $date yet.\nRefresh on the main screen to collect it."
+            binding.statsText.text = "No hourly data for $date yet.\nRefresh on the main screen first."
             return
         }
 
-        // Build 24-slot array
         val minutesByHour = LongArray(24)
         for (r in hourlyData) minutesByHour[r.hour] = r.minutes
+        val peak = minutesByHour.max()
 
         val entries = (0..23).map { h -> BarEntry(h.toFloat(), minutesByHour[h].toFloat()) }
         val labels = (0..23).map { repo.formatHour(it) }
 
+        // Color-code bars by time of day
         val colors = (0..23).map { h ->
             when {
-                minutesByHour[h] == minutesByHour.max() -> Color.parseColor("#E53935") // peak = red
-                h in 6..9 -> Color.parseColor("#FB8C00")   // morning = orange
-                h in 12..14 -> Color.parseColor("#43A047") // lunch = green
-                h in 18..22 -> Color.parseColor("#1976D2") // evening = blue
-                else -> Color.parseColor("#90A4AE")         // other = grey
+                minutesByHour[h] == peak -> Color.parseColor("#5C6BC0")   // peak = brand
+                h in 6..9               -> Color.parseColor("#FFA726")    // morning = amber
+                h in 12..14             -> Color.parseColor("#26A69A")    // lunch = teal
+                h in 18..22             -> Color.parseColor("#7E57C2")    // evening = purple
+                else                    -> Color.parseColor("#CFD8DC")    // other = light grey
             }
         }
 
         val dataSet = BarDataSet(entries, "Minutes").apply {
             this.colors = colors
-            valueTextSize = 8f
+            valueTextSize = 7f
+            valueTextColor = Color.GRAY
             valueFormatter = object : ValueFormatter() {
-                override fun getFormattedValue(value: Float): String =
-                    if (value > 0) "${value.toInt()}m" else ""
+                override fun getFormattedValue(v: Float): String = if (v > 0) "${v.toInt()}m" else ""
             }
         }
 
         binding.chartHourly.apply {
-            data = BarData(dataSet).apply { barWidth = 0.7f }
+            data = BarData(dataSet).apply { barWidth = 0.65f }
             xAxis.apply {
                 valueFormatter = IndexAxisValueFormatter(labels)
                 position = XAxis.XAxisPosition.BOTTOM
                 granularity = 1f
                 setDrawGridLines(false)
-                labelRotationAngle = -45f
-                textSize = 9f
+                labelRotationAngle = -55f
+                textSize = 8f
+                textColor = Color.GRAY
             }
             axisLeft.apply {
                 axisMinimum = 0f
+                textColor = Color.GRAY
+                gridColor = Color.parseColor("#F0F0F0")
                 valueFormatter = object : ValueFormatter() {
-                    override fun getFormattedValue(value: Float) = "${value.toInt()}m"
+                    override fun getFormattedValue(v: Float) = "${v.toInt()}m"
                 }
             }
             axisRight.isEnabled = false
@@ -93,21 +96,19 @@ class HourlyActivity : AppCompatActivity() {
             invalidate()
         }
 
-        // Stats
-        val peakHour = hourlyData.maxByOrNull { it.minutes }
+        val peakRecord = hourlyData.maxByOrNull { it.minutes }
         val totalMins = minutesByHour.sum()
-        val activeHours = hourlyData.size
 
         binding.statsText.text = buildString {
-            appendLine("📊 Date: $date")
-            appendLine("⏱ Total tracked: ${repo.formatMinutes(totalMins)}")
-            appendLine("🕐 Active hours: $activeHours")
-            peakHour?.let {
-                appendLine("🔺 Peak hour: ${repo.formatHour(it.hour)}  (${repo.formatMinutes(it.minutes)})")
+            appendLine("$date")
+            appendLine("")
+            appendLine("⏱  Total tracked: ${repo.formatMinutes(totalMins)}")
+            appendLine("🕐  Active hours: ${hourlyData.size}")
+            peakRecord?.let {
+                appendLine("🔵  Peak hour: ${repo.formatHour(it.hour)}  (${repo.formatMinutes(it.minutes)})")
             }
             appendLine("")
-            appendLine("🟠 Morning (6-9am)  🟢 Lunch (12-2pm)  🔵 Evening (6-10pm)")
-            append("🔴 Peak hour")
+            append("🟡 Morning  🟢 Lunch  🟣 Evening  🔵 Peak")
         }
     }
 

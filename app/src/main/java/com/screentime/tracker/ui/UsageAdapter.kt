@@ -1,5 +1,6 @@
 package com.screentime.tracker.ui
 
+import android.graphics.Color
 import android.view.LayoutInflater
 import android.view.ViewGroup
 import androidx.recyclerview.widget.DiffUtil
@@ -21,6 +22,13 @@ class UsageAdapter(
             override fun areContentsTheSame(a: DailyRecord, b: DailyRecord) =
                 a.totalMinutes == b.totalMinutes && a.sessionCount == b.sessionCount
         }
+
+        // Distinct colors for app initials
+        private val ICON_COLORS = listOf(
+            "#5C6BC0", "#EF5350", "#26A69A", "#FFA726",
+            "#AB47BC", "#29B6F6", "#66BB6A", "#FF7043",
+            "#EC407A", "#8D6E63", "#78909C", "#42A5F5"
+        )
     }
 
     inner class ViewHolder(val binding: ItemUsageBinding) : RecyclerView.ViewHolder(binding.root)
@@ -35,12 +43,19 @@ class UsageAdapter(
         val meta = repo.getAppMeta(record.packageName)
         val displayName = meta.customName?.takeIf { it.isNotBlank() } ?: record.appName
         val sessions = if (record.sessionCount == 1) "1 session" else "${record.sessionCount} sessions"
-        val categoryStr = if (meta.category != "Uncategorized") "📁 ${meta.category}  •  " else ""
+        val categoryStr = if (meta.category != "Uncategorized") "${meta.category}  •  " else ""
+
+        // Icon: first letter of display name, colored by hash
+        val initial = displayName.firstOrNull()?.uppercaseChar()?.toString() ?: "?"
+        val colorHex = ICON_COLORS[Math.abs(record.packageName.hashCode()) % ICON_COLORS.size]
 
         holder.binding.apply {
+            appInitial.text = initial
+            appInitial.setBackgroundColor(Color.parseColor(colorHex))
             appNameText.text = displayName
             packageText.text = "$categoryStr$sessions"
             timeText.text = repo.formatMinutes(record.totalMinutes)
+            sessionCountText.text = if (record.sessionCount > 0) "$sessions" else ""
             usageBar.progress = ((record.totalMinutes * 100) / maxMinutes).toInt()
             root.setOnClickListener { onClick(record) }
         }

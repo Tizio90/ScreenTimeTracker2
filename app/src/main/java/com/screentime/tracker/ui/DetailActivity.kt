@@ -30,6 +30,7 @@ class DetailActivity : AppCompatActivity() {
         originalName = intent.getStringExtra(EXTRA_APP_NAME) ?: packageName
         repo = UsageRepository(this)
 
+        setSupportActionBar(binding.toolbar)
         supportActionBar?.setDisplayHomeAsUpEnabled(true)
         refreshUI()
 
@@ -38,6 +39,7 @@ class DetailActivity : AppCompatActivity() {
             val input = android.widget.EditText(this).apply {
                 setText(meta.customName ?: originalName)
                 hint = "Custom display name"
+                setPadding(48, 32, 48, 32)
             }
             AlertDialog.Builder(this)
                 .setTitle("Rename App")
@@ -75,22 +77,21 @@ class DetailActivity : AppCompatActivity() {
 
         val sessions = repo.getSessionsForPackage(packageName)
         val totalMinutes = sessions.sumOf { it.durationMinutes }
-        val avgPerDay = if (sessions.isNotEmpty()) {
-            val distinctDays = sessions.map { it.date }.toSet().size
-            if (distinctDays > 0) totalMinutes / distinctDays else 0L
-        } else 0L
+        val distinctDays = sessions.map { it.date }.toSet().size
+        val avgPerDay = if (distinctDays > 0) totalMinutes / distinctDays else 0L
         val longestSession = sessions.maxByOrNull { it.durationMinutes }
+        val shortestSession = sessions.filter { it.durationMinutes >= 1 }.minByOrNull { it.durationMinutes }
 
         binding.summaryText.text =
-            "📦 $packageName\n" +
-            "📁 Category: ${meta.category}\n" +
-            "📅 Days tracked: ${sessions.map { it.date }.toSet().size}\n" +
-            "🔢 Total sessions: ${sessions.size}\n" +
-            "⏱ Total time: ${repo.formatMinutes(totalMinutes)}\n" +
-            "📊 Avg per day: ${repo.formatMinutes(avgPerDay)}\n" +
-            (longestSession?.let { "🏆 Longest session: ${repo.formatMinutes(it.durationMinutes)} (${it.date} ${it.startTime})" } ?: "")
+            "📦  $packageName\n" +
+            "📁  Category: ${meta.category}\n" +
+            "📅  Days tracked: $distinctDays\n" +
+            "🔢  Total sessions: ${sessions.size}\n" +
+            "⏱  Total time: ${repo.formatMinutes(totalMinutes)}\n" +
+            "📊  Avg per day: ${repo.formatMinutes(avgPerDay)}\n" +
+            (longestSession?.let { "🏆  Longest: ${repo.formatMinutes(it.durationMinutes)} on ${it.date} at ${it.startTime}\n" } ?: "") +
+            (shortestSession?.let { "⚡  Shortest: ${repo.formatMinutes(it.durationMinutes)}" } ?: "")
 
-        // Show session list
         binding.historyRecycler.layoutManager = LinearLayoutManager(this)
         binding.historyRecycler.adapter = SessionAdapter(sessions, repo)
     }

@@ -1,114 +1,219 @@
 <?xml version="1.0" encoding="utf-8"?>
 <LinearLayout
     xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:orientation="vertical"
-    android:background="?attr/colorBackgroundFloating">
+    android:background="@color/colorBackground">
 
-    <LinearLayout
+    <!-- Top bar -->
+    <androidx.appcompat.widget.Toolbar
+        android:id="@+id/toolbar"
         android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:orientation="vertical"
-        android:background="@color/colorPrimary"
-        android:padding="16dp">
+        android:layout_height="?attr/actionBarSize"
+        android:paddingHorizontal="8dp"
+        style="@style/AppToolbar"
+        app:title="Screen Time"
+        app:titleTextAppearance="@style/TextAppName"/>
 
-        <TextView
-            android:id="@+id/totalTimeText"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="Today: --"
-            android:textSize="22sp"
-            android:textStyle="bold"
-            android:textColor="#FFFFFF"/>
-
-        <LinearLayout
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:orientation="horizontal"
-            android:layout_marginTop="2dp">
-
-            <TextView
-                android:id="@+id/dateText"
-                android:layout_width="0dp"
-                android:layout_height="wrap_content"
-                android:layout_weight="1"
-                android:textSize="13sp"
-                android:textColor="#CCFFFFFF"/>
-
-            <TextView
-                android:id="@+id/peakHourText"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:textSize="13sp"
-                android:textColor="#CCFFFFFF"/>
-
-        </LinearLayout>
-
-        <LinearLayout
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="10dp"
-            android:orientation="horizontal">
-
-            <Button android:id="@+id/btnToday"
-                android:layout_width="0dp" android:layout_height="34dp"
-                android:layout_weight="1" android:layout_marginEnd="3dp"
-                android:text="Today" android:textSize="11sp"
-                android:textColor="@color/colorPrimary" android:background="#FFFFFF"/>
-
-            <Button android:id="@+id/btnPickDate"
-                android:layout_width="0dp" android:layout_height="34dp"
-                android:layout_weight="1" android:layout_marginHorizontal="3dp"
-                android:text="History" android:textSize="11sp"
-                android:textColor="@color/colorPrimary" android:background="#FFFFFF"/>
-
-            <Button android:id="@+id/btnHourly"
-                android:layout_width="0dp" android:layout_height="34dp"
-                android:layout_weight="1" android:layout_marginHorizontal="3dp"
-                android:text="Hourly" android:textSize="11sp"
-                android:textColor="@color/colorPrimary" android:background="#FFFFFF"/>
-
-            <Button android:id="@+id/btnWeekly"
-                android:layout_width="0dp" android:layout_height="34dp"
-                android:layout_weight="1" android:layout_marginHorizontal="3dp"
-                android:text="Week" android:textSize="11sp"
-                android:textColor="@color/colorPrimary" android:background="#FFFFFF"/>
-
-            <Button android:id="@+id/btnMonthly"
-                android:layout_width="0dp" android:layout_height="34dp"
-                android:layout_weight="1" android:layout_marginStart="3dp"
-                android:text="Month" android:textSize="11sp"
-                android:textColor="@color/colorPrimary" android:background="#FFFFFF"/>
-
-        </LinearLayout>
-    </LinearLayout>
-
-    <TextView
-        android:id="@+id/emptyView"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:padding="32dp"
-        android:gravity="center"
-        android:text="No data yet.\nTap Refresh to collect stats."
-        android:visibility="gone"
-        android:textColor="?android:attr/textColorSecondary"/>
-
-    <androidx.recyclerview.widget.RecyclerView
-        android:id="@+id/recyclerView"
+    <!-- Scrollable body -->
+    <androidx.core.widget.NestedScrollView
         android:layout_width="match_parent"
         android:layout_height="0dp"
         android:layout_weight="1"
-        android:clipToPadding="false"
-        android:paddingBottom="60dp"/>
+        android:fillViewport="true"
+        android:paddingBottom="80dp"
+        android:clipToPadding="false">
 
-    <Button
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:padding="16dp">
+
+            <!-- Hero card: today total -->
+            <com.google.android.material.card.MaterialCardView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                style="@style/AppCard"
+                android:layout_marginBottom="12dp">
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical"
+                    android:padding="20dp"
+                    android:background="@drawable/bg_hero_card">
+
+                    <TextView
+                        style="@style/TextSectionLabel"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="Screen Time"
+                        android:textColor="#AAFFFFFF"/>
+
+                    <TextView
+                        android:id="@+id/totalTimeText"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="0h 0m"
+                        android:textSize="42sp"
+                        android:textStyle="bold"
+                        android:textColor="#FFFFFF"
+                        android:layout_marginTop="2dp"/>
+
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="horizontal"
+                        android:layout_marginTop="4dp">
+
+                        <TextView
+                            android:id="@+id/dateText"
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_weight="1"
+                            android:textSize="13sp"
+                            android:textColor="#CCFFFFFF"/>
+
+                        <TextView
+                            android:id="@+id/peakHourText"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:textSize="13sp"
+                            android:textColor="#CCFFFFFF"/>
+
+                    </LinearLayout>
+
+                </LinearLayout>
+            </com.google.android.material.card.MaterialCardView>
+
+            <!-- Quick nav buttons -->
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:layout_marginBottom="16dp">
+
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/btnToday"
+                    style="@style/ButtonOutlined"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:layout_marginEnd="4dp"
+                    android:text="Today"/>
+
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/btnPickDate"
+                    style="@style/ButtonOutlined"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:layout_marginHorizontal="4dp"
+                    android:text="History"/>
+
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/btnHourly"
+                    style="@style/ButtonOutlined"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:layout_marginHorizontal="4dp"
+                    android:text="Hourly"/>
+
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/btnWeekly"
+                    style="@style/ButtonOutlined"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:layout_marginHorizontal="4dp"
+                    android:text="Week"/>
+
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/btnMonthly"
+                    style="@style/ButtonOutlined"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:layout_marginStart="4dp"
+                    android:text="Month"/>
+
+            </LinearLayout>
+
+            <!-- Apps section header -->
+            <TextView
+                style="@style/TextSectionLabel"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Apps"
+                android:layout_marginBottom="8dp"/>
+
+            <!-- Empty state -->
+            <com.google.android.material.card.MaterialCardView
+                android:id="@+id/emptyView"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                style="@style/AppCard"
+                android:visibility="gone">
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical"
+                    android:gravity="center"
+                    android:padding="32dp">
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="📱"
+                        android:textSize="40sp"/>
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="No data yet"
+                        android:textSize="16sp"
+                        android:textStyle="bold"
+                        android:textColor="@color/colorOnSurface"
+                        android:layout_marginTop="8dp"/>
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="Tap Refresh to collect today's stats"
+                        android:textSize="13sp"
+                        android:textColor="@color/colorTextSecondary"
+                        android:gravity="center"
+                        android:layout_marginTop="4dp"/>
+
+                </LinearLayout>
+            </com.google.android.material.card.MaterialCardView>
+
+            <!-- App list -->
+            <androidx.recyclerview.widget.RecyclerView
+                android:id="@+id/recyclerView"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:nestedScrollingEnabled="false"
+                android:overScrollMode="never"/>
+
+        </LinearLayout>
+    </androidx.core.widget.NestedScrollView>
+
+    <!-- Refresh FAB -->
+    <com.google.android.material.floatingactionbutton.ExtendedFloatingActionButton
         android:id="@+id/fabRefresh"
-        android:layout_width="match_parent"
+        android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:text="⟳  Refresh Now"
-        android:background="@color/colorPrimary"
-        android:textColor="#FFFFFF"
-        android:padding="14dp"/>
+        android:layout_gravity="bottom|end"
+        android:layout_margin="16dp"
+        android:text="Refresh"
+        app:icon="@android:drawable/ic_menu_rotate"
+        android:backgroundTint="@color/colorPrimary"
+        android:textColor="@color/colorOnPrimary"/>
 
 </LinearLayout>

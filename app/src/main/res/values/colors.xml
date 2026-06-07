@@ -1,12 +1,32 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <color name="colorPrimary">#1976D2</color>
-    <color name="colorPrimaryDark">#1565C0</color>
-    <color name="colorAccent">#03DAC6</color>
-    <color name="colorWhite">#FFFFFF</color>
-    <color name="colorGray">#888888</color>
-    <color name="colorBackground">#F5F5F5</color>
+    <!-- Brand -->
+    <color name="colorPrimary">#5C6BC0</color>
+    <color name="colorPrimaryDark">#3949AB</color>
+    <color name="colorPrimaryLight">#9FA8DA</color>
+    <color name="colorAccent">#FF6E40</color>
+
+    <!-- Backgrounds -->
+    <color name="colorBackground">#F0F2FF</color>
     <color name="colorSurface">#FFFFFF</color>
-    <color name="colorOnSurface">#000000</color>
     <color name="colorCardBg">#FFFFFF</color>
+
+    <!-- Text -->
+    <color name="colorOnPrimary">#FFFFFF</color>
+    <color name="colorOnSurface">#1A1C2E</color>
+    <color name="colorTextSecondary">#6B6F8E</color>
+
+    <!-- Misc -->
+    <color name="colorDivider">#E8EAF6</color>
+    <color name="colorProgressBg">#E8EAF6</color>
+
+    <!-- Chart colors -->
+    <color name="chart1">#5C6BC0</color>
+    <color name="chart2">#EF5350</color>
+    <color name="chart3">#26A69A</color>
+    <color name="chart4">#FFA726</color>
+    <color name="chart5">#AB47BC</color>
+    <color name="chart6">#29B6F6</color>
+    <color name="chart7">#66BB6A</color>
+    <color name="chart8">#FF7043</color>
 </resources>

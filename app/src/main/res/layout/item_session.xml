@@ -4,30 +4,55 @@
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
     android:orientation="horizontal"
-    android:background="?attr/colorBackgroundFloating"
-    android:paddingHorizontal="16dp"
-    android:paddingVertical="10dp"
-    android:layout_marginBottom="1dp">
+    android:paddingHorizontal="4dp"
+    android:paddingVertical="8dp"
+    android:gravity="center_vertical">
+
+    <!-- Timeline dot -->
+    <LinearLayout
+        android:layout_width="32dp"
+        android:layout_height="match_parent"
+        android:orientation="vertical"
+        android:gravity="center_horizontal">
+
+        <View
+            android:layout_width="2dp"
+            android:layout_height="0dp"
+            android:layout_weight="1"
+            android:background="@color/colorDivider"/>
+
+        <View
+            android:layout_width="10dp"
+            android:layout_height="10dp"
+            android:background="@drawable/bg_timeline_dot"/>
+
+        <View
+            android:layout_width="2dp"
+            android:layout_height="0dp"
+            android:layout_weight="1"
+            android:background="@color/colorDivider"/>
+
+    </LinearLayout>
 
     <LinearLayout
         android:layout_width="0dp"
         android:layout_height="wrap_content"
         android:layout_weight="1"
-        android:orientation="vertical">
+        android:orientation="vertical"
+        android:layout_marginStart="8dp">
 
         <TextView
             android:id="@+id/sessionDate"
+            style="@style/TextSubtitle"
             android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:textSize="13sp"
-            android:textColor="?android:attr/textColorSecondary"/>
+            android:layout_height="wrap_content"/>
 
         <TextView
             android:id="@+id/sessionTime"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:textSize="15sp"
-            android:textColor="?android:attr/textColorPrimary"/>
+            android:textSize="14sp"
+            android:textColor="@color/colorOnSurface"/>
 
     </LinearLayout>
 
@@ -35,9 +60,11 @@
         android:id="@+id/sessionDuration"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:layout_gravity="center_vertical"
-        android:textSize="15sp"
+        android:textSize="14sp"
         android:textStyle="bold"
-        android:textColor="@color/colorPrimary"/>
+        android:textColor="@color/colorPrimary"
+        android:background="@drawable/bg_chip"
+        android:paddingHorizontal="8dp"
+        android:paddingVertical="4dp"/>
 
 </LinearLayout>
