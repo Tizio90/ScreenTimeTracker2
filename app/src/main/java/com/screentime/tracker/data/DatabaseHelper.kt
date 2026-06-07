@@ -30,7 +30,7 @@ class DatabaseHelper(context: Context) :
 
     companion object {
         const val DATABASE_NAME = "screen_time.db"
-        const val DATABASE_VERSION = 3
+        const val DATABASE_VERSION = 5
 
         const val TABLE_USAGE = "usage_log"
         const val COL_ID = "_id"
@@ -115,7 +115,18 @@ class DatabaseHelper(context: Context) :
                 $COL_CAT_NAME TEXT PRIMARY KEY
             )""")
         }
+        // v4: clear corrupted data from old engine. Meta preserved.
+        if (oldVersion < 4) {
+            try { db.execSQL("DELETE FROM $TABLE_USAGE") } catch (e: Exception) {}
+            try { db.execSQL("DELETE FROM $TABLE_HOURLY") } catch (e: Exception) {}
+        }
+        // v5: clear again — tracking engine was still wrong in v4 build.
+        if (oldVersion < 5) {
+            try { db.execSQL("DELETE FROM $TABLE_USAGE") } catch (e: Exception) {}
+            try { db.execSQL("DELETE FROM $TABLE_HOURLY") } catch (e: Exception) {}
+        }
     }
+
 
     // ── Usage ──────────────────────────────────────────────
     fun upsertUsage(record: UsageRecord) {

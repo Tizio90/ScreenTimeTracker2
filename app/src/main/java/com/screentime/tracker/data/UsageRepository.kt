@@ -15,6 +15,8 @@ class UsageRepository(private val context: Context) {
     val prefs = Prefs(context)
     private val dateFormat = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault())
 
+    // ── Permission ─────────────────────────────────────────
+
     fun hasUsagePermission(): Boolean {
         return try {
             val appOps = context.getSystemService(Context.APP_OPS_SERVICE) as AppOpsManager
@@ -25,122 +27,186 @@ class UsageRepository(private val context: Context) {
         } catch (e: Exception) { false }
     }
 
-    /** Returns the logical "today" date string based on day start hour */
-    fun getTodayDate(): String {
-        val cal = Calendar.getInstance()
-        val dayStartHour = prefs.dayStartHour
-        // If current time is before day start hour, the logical day is still yesterday
-        if (cal.get(Calendar.HOUR_OF_DAY) < dayStartHour) {
+    // ── Day boundary helpers ───────────────────────────────
+
+    /**
+     * Returns the logical "today" label (yyyy-MM-dd) for right now.
+     * If current hour < dayStartHour, we are still in the previous logical day.
+     */
+    fun getTodayDate(): String = logicalDateFor(System.currentTimeMillis())
+
+    /**
+     * Returns the logical date label for any given epoch ms.
+     */
+    fun logicalDateFor(epochMs: Long): String {
+        val cal = Calendar.getInstance().apply { timeInMillis = epochMs }
+        if (prefs.dayStartHour > 0 && cal.get(Calendar.HOUR_OF_DAY) < prefs.dayStartHour) {
             cal.add(Calendar.DAY_OF_YEAR, -1)
         }
         return dateFormat.format(cal.time)
     }
 
-    /** Returns start-of-logical-day epoch ms */
-    private fun getStartOfLogicalDay(): Long {
-        val cal = Calendar.getInstance()
-        val dayStartHour = prefs.dayStartHour
-        if (cal.get(Calendar.HOUR_OF_DAY) < dayStartHour) {
+    /**
+     * Returns the epoch ms of the start of the logical day containing [epochMs].
+     */
+    private fun logicalDayStartFor(epochMs: Long): Long {
+        val cal = Calendar.getInstance().apply { timeInMillis = epochMs }
+        if (prefs.dayStartHour > 0 && cal.get(Calendar.HOUR_OF_DAY) < prefs.dayStartHour) {
             cal.add(Calendar.DAY_OF_YEAR, -1)
         }
-        cal.set(Calendar.HOUR_OF_DAY, dayStartHour)
+        cal.set(Calendar.HOUR_OF_DAY, prefs.dayStartHour)
         cal.set(Calendar.MINUTE, 0)
         cal.set(Calendar.SECOND, 0)
         cal.set(Calendar.MILLISECOND, 0)
         return cal.timeInMillis
     }
 
+    // ── Collection ─────────────────────────────────────────
+
+    /**
+     * Collects usage for the current logical day (from day-start to now).
+     * Fully event-driven — never uses queryUsageStats which ignores custom boundaries.
+     * Safe to call repeatedly; uses REPLACE so no double-counting.
+     */
     fun collectAndSaveToday() {
+        if (!hasUsagePermission()) return
         try {
-            val today = getTodayDate()
-            val startOfDay = getStartOfLogicalDay()
             val now = System.currentTimeMillis()
+            val dayStart = logicalDayStartFor(now)
+            val dateLabel = logicalDateFor(now)
+            collectWindow(dateLabel, dayStart, now)
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+    }
 
-            val usm = context.getSystemService(Context.USAGE_STATS_SERVICE) as UsageStatsManager
-            val pm = context.packageManager
+    /**
+     * Core engine: queries raw UsageEvents in [startMs, endMs],
+     * builds per-app totals and per-hour totals, writes to DB.
+     *
+     * Key correctness properties:
+     * - Uses only events within the window (startMs..endMs)
+     * - RESUME timestamps are clamped to startMs (handles apps already running at window start)
+     * - Open sessions at endMs are closed at endMs (handles currently running app)
+     * - Hour distribution splits sessions that cross hour boundaries
+     * - Each (package, date) row is replaced atomically — no accumulation errors
+     */
+    private fun collectWindow(dateLabel: String, startMs: Long, endMs: Long) {
+        if (endMs <= startMs) return
 
-            // Daily totals — query from logical day start
-            val stats = usm.queryUsageStats(UsageStatsManager.INTERVAL_DAILY, startOfDay, now) ?: return
-            for (stat in stats) {
-                if (stat.totalTimeInForeground < 60_000) continue
-                val appName = try {
-                    pm.getApplicationLabel(pm.getApplicationInfo(stat.packageName, 0)).toString()
-                } catch (e: PackageManager.NameNotFoundException) { stat.packageName }
-                db.upsertUsage(UsageRecord(
-                    packageName = stat.packageName, appName = appName, date = today,
-                    totalMinutes = stat.totalTimeInForeground / 60_000,
-                    lastUpdated = now
-                ))
-            }
+        val usm = context.getSystemService(Context.USAGE_STATS_SERVICE) as UsageStatsManager
+        val pm = context.packageManager
 
-            // Hourly breakdown using UsageEvents from logical day start
-            val hourlyMinutes = LongArray(24)
-            val events = usm.queryEvents(startOfDay, now)
-            val event = UsageEvents.Event()
-            var lastForegroundTime = -1L
-            while (events.hasNextEvent()) {
-                events.getNextEvent(event)
-                when (event.eventType) {
-                    UsageEvents.Event.ACTIVITY_RESUMED -> lastForegroundTime = event.timeStamp
-                    UsageEvents.Event.ACTIVITY_PAUSED -> {
-                        if (lastForegroundTime > 0) {
-                            val durationMs = event.timeStamp - lastForegroundTime
-                            val hour = Calendar.getInstance().apply { timeInMillis = lastForegroundTime }.get(Calendar.HOUR_OF_DAY)
-                            hourlyMinutes[hour] += durationMs / 60_000
-                            lastForegroundTime = -1L
-                        }
+        val appTotalMs = mutableMapOf<String, Long>()   // pkg → total ms in foreground
+        val hourSlices = LongArray(24)                   // hour 0-23 → total minutes
+        val openSessions = mutableMapOf<String, Long>()  // pkg → resume timestamp
+
+        val events = usm.queryEvents(startMs, endMs) ?: return
+        val ev = UsageEvents.Event()
+
+        while (events.hasNextEvent()) {
+            events.getNextEvent(ev)
+            val pkg = ev.packageName ?: continue
+
+            when (ev.eventType) {
+                UsageEvents.Event.ACTIVITY_RESUMED -> {
+                    // Clamp to window start in case app was already running before our window
+                    openSessions[pkg] = maxOf(ev.timeStamp, startMs)
+                }
+                UsageEvents.Event.ACTIVITY_PAUSED,
+                UsageEvents.Event.ACTIVITY_STOPPED -> {
+                    val resumeAt = openSessions.remove(pkg) ?: continue
+                    val pauseAt = minOf(ev.timeStamp, endMs)
+                    if (pauseAt > resumeAt) {
+                        val dur = pauseAt - resumeAt
+                        appTotalMs[pkg] = (appTotalMs[pkg] ?: 0L) + dur
+                        splitIntoHours(resumeAt, pauseAt, hourSlices)
                     }
                 }
             }
-            for (h in 0..23) {
-                if (hourlyMinutes[h] > 0) db.upsertHourly(today, h, hourlyMinutes[h])
+        }
+
+        // Close sessions still open at endMs (app in foreground right now)
+        for ((pkg, resumeAt) in openSessions) {
+            val dur = endMs - resumeAt
+            if (dur > 0) {
+                appTotalMs[pkg] = (appTotalMs[pkg] ?: 0L) + dur
+                splitIntoHours(resumeAt, endMs, hourSlices)
             }
-        } catch (e: Exception) { e.printStackTrace() }
+        }
+
+        // Persist per-app totals (skip < 1 minute)
+        for ((pkg, totalMs) in appTotalMs) {
+            val mins = totalMs / 60_000L
+            if (mins < 1L) continue
+            val name = try {
+                pm.getApplicationLabel(pm.getApplicationInfo(pkg, 0)).toString()
+            } catch (_: PackageManager.NameNotFoundException) { pkg }
+            db.upsertUsage(UsageRecord(
+                packageName = pkg, appName = name, date = dateLabel,
+                totalMinutes = mins, lastUpdated = endMs
+            ))
+        }
+
+        // Persist hourly data (skip empty hours)
+        for (h in 0..23) {
+            if (hourSlices[h] > 0L) db.upsertHourly(dateLabel, h, hourSlices[h])
+        }
     }
 
-    fun getDisplayName(packageName: String, fallback: String): String {
-        val meta = db.getAppMeta(packageName)
-        return meta.customName?.takeIf { it.isNotBlank() } ?: fallback
+    /**
+     * Splits a foreground session [fromMs, toMs] across clock hours.
+     * Correctly handles sessions that span multiple hours or cross midnight.
+     * Adds minutes to [slices] array indexed by hour 0-23.
+     */
+    private fun splitIntoHours(fromMs: Long, toMs: Long, slices: LongArray) {
+        var cursor = fromMs
+        val cal = Calendar.getInstance()
+        while (cursor < toMs) {
+            cal.timeInMillis = cursor
+            val hour = cal.get(Calendar.HOUR_OF_DAY)
+            // Advance cal to end of this clock hour
+            cal.set(Calendar.MINUTE, 59)
+            cal.set(Calendar.SECOND, 59)
+            cal.set(Calendar.MILLISECOND, 999)
+            val hourEnd = minOf(cal.timeInMillis, toMs)
+            val sliceMs = hourEnd - cursor
+            if (sliceMs > 0) slices[hour] += sliceMs / 60_000L
+            cursor = hourEnd + 1L
+        }
     }
 
-    fun saveAppMeta(packageName: String, customName: String?, category: String) =
-        db.saveAppMeta(packageName, customName, category)
-
-    fun getAppMeta(packageName: String) = db.getAppMeta(packageName)
-    fun getAllMeta() = db.getAllMeta()
-
-    fun addCustomCategory(name: String) = db.addCustomCategory(name)
-    fun deleteCustomCategory(name: String) = db.deleteCustomCategory(name)
-    fun getCustomCategories() = db.getCustomCategories()
-    fun getAllCategories() = db.getAllCategories()
-
-    fun getUsageForDate(date: String) = db.getUsageForDate(date)
-    fun getUsageForPackage(pkg: String) = db.getUsageForPackage(pkg)
-    fun getAllRecords() = db.getAllRecords()
-    fun getAvailableDates() = db.getAvailableDates()
-    fun getTotalMinutesForDate(date: String) = db.getTotalMinutesForDate(date)
+    // ── Summary data ───────────────────────────────────────
 
     fun getWeeklyData(): List<Pair<String, Long>> {
-        val cal = Calendar.getInstance()
-        if (cal.get(Calendar.HOUR_OF_DAY) < prefs.dayStartHour) cal.add(Calendar.DAY_OF_YEAR, -1)
-        val endDate = dateFormat.format(cal.time)
-        cal.add(Calendar.DAY_OF_YEAR, -6)
-        return db.getDailyTotals(dateFormat.format(cal.time), endDate)
+        val (start, end) = weekRange()
+        return db.getDailyTotals(start, end)
     }
 
     fun getMonthlyData(): List<Pair<String, Long>> {
-        val cal = Calendar.getInstance()
-        if (cal.get(Calendar.HOUR_OF_DAY) < prefs.dayStartHour) cal.add(Calendar.DAY_OF_YEAR, -1)
-        val endDate = dateFormat.format(cal.time)
-        cal.add(Calendar.DAY_OF_YEAR, -29)
-        return db.getDailyTotals(dateFormat.format(cal.time), endDate)
+        val (start, end) = monthRange()
+        return db.getDailyTotals(start, end)
     }
 
-    fun getHourlyForDate(date: String) = db.getHourlyForDate(date)
-    fun getAllTimeHourlyTotals() = db.getAllTimeHourlyTotals()
+    private fun weekRange(): Pair<String, String> {
+        val now = System.currentTimeMillis()
+        val endCal = Calendar.getInstance().apply { timeInMillis = now }
+        if (prefs.dayStartHour > 0 && endCal.get(Calendar.HOUR_OF_DAY) < prefs.dayStartHour)
+            endCal.add(Calendar.DAY_OF_YEAR, -1)
+        val end = dateFormat.format(endCal.time)
+        endCal.add(Calendar.DAY_OF_YEAR, -6)
+        return Pair(dateFormat.format(endCal.time), end)
+    }
 
-    fun getPeakHour(date: String): Int? =
-        db.getHourlyForDate(date).maxByOrNull { it.minutes }?.hour
+    private fun monthRange(): Pair<String, String> {
+        val now = System.currentTimeMillis()
+        val endCal = Calendar.getInstance().apply { timeInMillis = now }
+        if (prefs.dayStartHour > 0 && endCal.get(Calendar.HOUR_OF_DAY) < prefs.dayStartHour)
+            endCal.add(Calendar.DAY_OF_YEAR, -1)
+        val end = dateFormat.format(endCal.time)
+        endCal.add(Calendar.DAY_OF_YEAR, -29)
+        return Pair(dateFormat.format(endCal.time), end)
+    }
 
     fun getCategoryTotalsForDate(date: String): Map<String, Long> {
         val records = db.getUsageForDate(date)
@@ -153,15 +219,41 @@ class UsageRepository(private val context: Context) {
         return totals
     }
 
+    // ── Passthrough ────────────────────────────────────────
+
+    fun getDisplayName(packageName: String, fallback: String): String {
+        val meta = db.getAppMeta(packageName)
+        return meta.customName?.takeIf { it.isNotBlank() } ?: fallback
+    }
+
+    fun saveAppMeta(pkg: String, customName: String?, category: String) =
+        db.saveAppMeta(pkg, customName, category)
+
+    fun getAppMeta(pkg: String) = db.getAppMeta(pkg)
+    fun getAllMeta() = db.getAllMeta()
+    fun addCustomCategory(name: String) = db.addCustomCategory(name)
+    fun deleteCustomCategory(name: String) = db.deleteCustomCategory(name)
+    fun getCustomCategories() = db.getCustomCategories()
+    fun getAllCategories() = db.getAllCategories()
+    fun getUsageForDate(date: String) = db.getUsageForDate(date)
+    fun getUsageForPackage(pkg: String) = db.getUsageForPackage(pkg)
+    fun getAllRecords() = db.getAllRecords()
+    fun getAvailableDates() = db.getAvailableDates()
+    fun getTotalMinutesForDate(date: String) = db.getTotalMinutesForDate(date)
+    fun getHourlyForDate(date: String) = db.getHourlyForDate(date)
+    fun getPeakHour(date: String) = db.getHourlyForDate(date).maxByOrNull { it.minutes }?.hour
+
+    // ── Formatting ─────────────────────────────────────────
+
     fun formatMinutes(minutes: Long): String {
-        val h = minutes / 60; val m = minutes % 60
-        return if (h > 0) "${h}h ${m}m" else "${m}m"
+        val h = minutes / 60L; val m = minutes % 60L
+        return if (h > 0L) "${h}h ${m}m" else "${m}m"
     }
 
     fun formatHour(hour: Int): String = when {
-        hour == 0 -> "12am"
-        hour < 12 -> "${hour}am"
+        hour == 0  -> "12am"
+        hour < 12  -> "${hour}am"
         hour == 12 -> "12pm"
-        else -> "${hour - 12}pm"
+        else       -> "${hour - 12}pm"
     }
 }

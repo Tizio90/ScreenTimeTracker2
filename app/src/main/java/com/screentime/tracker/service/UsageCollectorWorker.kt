@@ -11,9 +11,12 @@ class UsageCollectorWorker(context: Context, params: WorkerParameters) :
     override suspend fun doWork(): Result {
         return try {
             val repo = UsageRepository(applicationContext)
-            if (repo.hasUsagePermission()) repo.collectAndSaveToday()
+            if (repo.hasUsagePermission()) {
+                repo.collectAndSaveToday()
+            }
             Result.success()
         } catch (e: Exception) {
+            e.printStackTrace()
             Result.retry()
         }
     }
@@ -22,11 +25,15 @@ class UsageCollectorWorker(context: Context, params: WorkerParameters) :
         private const val WORK_NAME = "screen_time_collector"
 
         fun schedule(context: Context) {
-            val request = PeriodicWorkRequestBuilder<UsageCollectorWorker>(30, TimeUnit.MINUTES)
-                .setBackoffCriteria(BackoffPolicy.EXPONENTIAL, 5, TimeUnit.MINUTES)
+            val request = PeriodicWorkRequestBuilder<UsageCollectorWorker>(15, TimeUnit.MINUTES)
+                .setBackoffCriteria(BackoffPolicy.LINEAR, 5, TimeUnit.MINUTES)
                 .build()
+
+            // UPDATE replaces any old scheduled work with new interval/params
             WorkManager.getInstance(context).enqueueUniquePeriodicWork(
-                WORK_NAME, ExistingPeriodicWorkPolicy.KEEP, request
+                WORK_NAME,
+                ExistingPeriodicWorkPolicy.UPDATE,
+                request
             )
         }
     }
