@@ -28,7 +28,7 @@ class UsageRepository(private val context: Context) {
         } catch (e: Exception) { false }
     }
 
-    // ── Day boundary helpers ───────────────────────────────
+    // ── Day boundary ───────────────────────────────────────
 
     fun getTodayDate(): String = logicalDateFor(System.currentTimeMillis())
 
@@ -39,7 +39,7 @@ class UsageRepository(private val context: Context) {
         return dateFormat.format(cal.time)
     }
 
-    private fun logicalDayStartFor(epochMs: Long): Long {
+    private fun logicalDayStartMs(epochMs: Long): Long {
         val cal = Calendar.getInstance().apply { timeInMillis = epochMs }
         if (prefs.dayStartHour > 0 && cal.get(Calendar.HOUR_OF_DAY) < prefs.dayStartHour)
             cal.add(Calendar.DAY_OF_YEAR, -1)
@@ -50,100 +50,125 @@ class UsageRepository(private val context: Context) {
         return cal.timeInMillis
     }
 
-    // ── Collection ─────────────────────────────────────────
+    // ── Core collection ────────────────────────────────────
 
     /**
-     * Collects all sessions for today's logical day.
-     * Strategy:
-     *  1. Find the last saved session's end epoch for today (or day start if none)
-     *  2. Query events only from that point forward — avoids re-processing old events
-     *  3. Each completed RESUME→PAUSE pair becomes one SessionRecord
-     *  4. Open session (app still running) is NOT saved — saved on next collection cycle
+     * Complete rewrite of the collection engine.
+     *
+     * Design principles:
+     *  1. Always scan the FULL logical day window (dayStart → now).
+     *     This is safe because we deduplicate by start_epoch in the DB.
+     *  2. Only use ACTIVITY_STOPPED (not PAUSED) for session end.
+     *     PAUSED fires for every notification/overlap; STOPPED is the real end.
+     *  3. Track open sessions across the full scan — never miss a RESUME
+     *     whose STOP comes later in the same scan.
+     *  4. Deduplicate: before inserting, check if a session with the same
+     *     package + start_epoch already exists.
+     *  5. Close any session still open at scan end (app currently in foreground)
+     *     as a partial session — marked so it can be updated next cycle.
      */
     fun collectAndSaveToday() {
         if (!hasUsagePermission()) return
         try {
             val now = System.currentTimeMillis()
-            val dayStart = logicalDayStartFor(now)
+            val dayStart = logicalDayStartMs(now)
             val today = logicalDateFor(now)
-
-            // Find where to start scanning from — after the last saved session end
-            val lastSavedEnd = db.getSessionsForDate(today)
-                .maxOfOrNull { it.endEpoch } ?: dayStart
-
-            // Add 1ms so we don't re-process the last event
-            val scanFrom = maxOf(lastSavedEnd, dayStart)
-
-            collectSessions(today, scanFrom, now)
+            processWindow(today, dayStart, now)
         } catch (e: Exception) {
             e.printStackTrace()
         }
     }
 
-    /**
-     * Queries UsageEvents from [startMs] to [endMs] and saves completed sessions.
-     * Each RESUME→PAUSE/STOP pair >= 1 minute is saved as a SessionRecord.
-     * Open sessions (no PAUSE yet) are skipped — they'll be captured next cycle.
-     */
-    private fun collectSessions(dateLabel: String, startMs: Long, endMs: Long) {
-        if (endMs <= startMs) return
-
+    private fun processWindow(dateLabel: String, windowStart: Long, windowEnd: Long) {
         val usm = context.getSystemService(Context.USAGE_STATS_SERVICE) as UsageStatsManager
         val pm = context.packageManager
 
-        val events = usm.queryEvents(startMs, endMs) ?: return
-        val ev = UsageEvents.Event()
+        // Load existing session start epochs for today to deduplicate
+        val existingStarts = db.getSessionsForDate(dateLabel)
+            .map { it.startEpoch }
+            .toHashSet()
 
-        // pkg → resume epoch (clamped to startMs)
+        // Also delete any previously saved "open" (partial) sessions so we rewrite them
+        db.deleteOpenSessionsForDate(dateLabel)
+
+        // Map: package → resume timestamp
         val openSessions = mutableMapOf<String, Long>()
+
+        val events = usm.queryEvents(windowStart, windowEnd) ?: return
+        val ev = UsageEvents.Event()
 
         while (events.hasNextEvent()) {
             events.getNextEvent(ev)
             val pkg = ev.packageName ?: continue
 
+            // Skip system UI and our own app
+            if (pkg == "com.android.systemui" || pkg == context.packageName) continue
+
             when (ev.eventType) {
                 UsageEvents.Event.ACTIVITY_RESUMED -> {
-                    openSessions[pkg] = maxOf(ev.timeStamp, startMs)
+                    // Only record if not already tracking this app
+                    // (handles multiple activities in same app)
+                    if (!openSessions.containsKey(pkg)) {
+                        openSessions[pkg] = ev.timeStamp
+                    }
                 }
-                UsageEvents.Event.ACTIVITY_PAUSED,
+
                 UsageEvents.Event.ACTIVITY_STOPPED -> {
                     val resumeAt = openSessions.remove(pkg) ?: continue
-                    val pauseAt = ev.timeStamp
-                    val durationMs = pauseAt - resumeAt
+                    val stopAt = ev.timeStamp
+
+                    // Clamp to window boundaries
+                    val sessionStart = maxOf(resumeAt, windowStart)
+                    val sessionEnd = minOf(stopAt, windowEnd)
+                    if (sessionEnd <= sessionStart) continue
+
+                    val durationMs = sessionEnd - sessionStart
                     val durationMin = durationMs / 60_000L
-                    if (durationMin < 1L) continue  // skip sub-minute sessions
+                    if (durationMin < 1L) continue
 
-                    val appName = resolveAppName(pm, pkg)
-                    val sessionDate = logicalDateFor(resumeAt)
+                    // Skip if already saved (deduplication by start epoch)
+                    if (existingStarts.contains(sessionStart)) continue
 
-                    db.insertSession(SessionRecord(
-                        packageName = pkg,
-                        appName = appName,
-                        date = sessionDate,
-                        startEpoch = resumeAt,
-                        endEpoch = pauseAt,
-                        durationMinutes = durationMin,
-                        startTime = timeFormat.format(Date(resumeAt)),
-                        endTime = timeFormat.format(Date(pauseAt))
-                    ))
+                    saveSession(pm, pkg, dateLabel, sessionStart, sessionEnd, durationMin, isOpen = false)
                 }
             }
         }
-        // Note: open sessions are NOT saved here — they'll be captured on the next cycle
-        // This prevents saving partial/inflated durations for currently active apps
+
+        // Save still-open sessions as partial (app still in foreground)
+        for ((pkg, resumeAt) in openSessions) {
+            val sessionStart = maxOf(resumeAt, windowStart)
+            val durationMs = windowEnd - sessionStart
+            val durationMin = durationMs / 60_000L
+            if (durationMin < 1L) continue
+            if (existingStarts.contains(sessionStart)) continue
+            saveSession(pm, pkg, dateLabel, sessionStart, windowEnd, durationMin, isOpen = true)
+        }
     }
 
-    private fun resolveAppName(pm: PackageManager, pkg: String): String {
-        return try {
+    private fun saveSession(
+        pm: PackageManager,
+        pkg: String,
+        dateLabel: String,
+        startMs: Long,
+        endMs: Long,
+        durationMin: Long,
+        isOpen: Boolean
+    ) {
+        val appName = try {
             pm.getApplicationLabel(pm.getApplicationInfo(pkg, 0)).toString()
         } catch (_: PackageManager.NameNotFoundException) { pkg }
-    }
 
-    // ── Display name ───────────────────────────────────────
-
-    fun getDisplayName(packageName: String, fallback: String): String {
-        val meta = db.getAppMeta(packageName)
-        return meta.customName?.takeIf { it.isNotBlank() } ?: fallback
+        db.insertSession(SessionRecord(
+            packageName = pkg,
+            appName = appName,
+            date = dateLabel,
+            startEpoch = startMs,
+            endEpoch = endMs,
+            durationMinutes = durationMin,
+            startTime = timeFormat.format(Date(startMs)),
+            endTime = if (isOpen) "ongoing" else timeFormat.format(Date(endMs)),
+            isOpen = isOpen
+        ))
     }
 
     // ── Data access ────────────────────────────────────────
@@ -155,39 +180,31 @@ class UsageRepository(private val context: Context) {
     fun getTotalMinutesForDate(date: String) = db.getTotalMinutesForDate(date)
     fun getAvailableDates() = db.getAvailableDates()
     fun getHourlyForDate(date: String) = db.getHourlyForDate(date)
-    fun getAllTimeHourlyTotals() = db.getAllTimeHourlyTotals()
     fun getPeakHour(date: String) = db.getHourlyForDate(date).maxByOrNull { it.minutes }?.hour
 
     fun getCategoryTotalsForDate(date: String): Map<String, Long> {
         val allMeta = db.getAllMeta()
-        val totals = mutableMapOf<String, Long>()
-        for (r in db.getDailyRecords(date)) {
+        return db.getDailyRecords(date).associate { r ->
             val cat = allMeta[r.packageName]?.category ?: "Uncategorized"
-            totals[cat] = (totals[cat] ?: 0L) + r.totalMinutes
+            cat to r.totalMinutes
+        }.entries.fold(mutableMapOf<String, Long>()) { acc, (cat, min) ->
+            acc[cat] = (acc[cat] ?: 0L) + min; acc
         }
-        return totals
     }
 
-    fun getWeeklyData(): List<Pair<String, Long>> {
-        val (start, end) = rangeFor(6)
-        return db.getDailyTotals(start, end)
-    }
+    fun getWeeklyData() = db.getDailyTotals(*rangeFor(6))
+    fun getMonthlyData() = db.getDailyTotals(*rangeFor(29))
 
-    fun getMonthlyData(): List<Pair<String, Long>> {
-        val (start, end) = rangeFor(29)
-        return db.getDailyTotals(start, end)
-    }
-
-    private fun rangeFor(daysBack: Int): Pair<String, String> {
+    private fun rangeFor(daysBack: Int): Array<String> {
         val cal = Calendar.getInstance()
         if (prefs.dayStartHour > 0 && cal.get(Calendar.HOUR_OF_DAY) < prefs.dayStartHour)
             cal.add(Calendar.DAY_OF_YEAR, -1)
         val end = dateFormat.format(cal.time)
         cal.add(Calendar.DAY_OF_YEAR, -daysBack)
-        return Pair(dateFormat.format(cal.time), end)
+        return arrayOf(dateFormat.format(cal.time), end)
     }
 
-    // ── Meta passthrough ───────────────────────────────────
+    // ── Meta ───────────────────────────────────────────────
 
     fun saveAppMeta(pkg: String, customName: String?, category: String) = db.saveAppMeta(pkg, customName, category)
     fun getAppMeta(pkg: String) = db.getAppMeta(pkg)

@@ -11,12 +11,13 @@ data class SessionRecord(
     val id: Long = 0,
     val packageName: String,
     val appName: String,
-    val date: String,           // logical date yyyy-MM-dd
-    val startEpoch: Long,       // ms since epoch
-    val endEpoch: Long,         // ms since epoch
-    val durationMinutes: Long,  // (endEpoch - startEpoch) / 60000, stored for fast queries
-    val startTime: String,      // HH:mm for display
-    val endTime: String         // HH:mm for display
+    val date: String,
+    val startEpoch: Long,
+    val endEpoch: Long,
+    val durationMinutes: Long,
+    val startTime: String,
+    val endTime: String,
+    val isOpen: Boolean = false   // true = app still running, partial session
 )
 
 data class DailyRecord(
@@ -43,9 +44,8 @@ class DatabaseHelper(context: Context) :
 
     companion object {
         const val DATABASE_NAME = "screen_time.db"
-        const val DATABASE_VERSION = 6
+        const val DATABASE_VERSION = 7  // bumped: added is_open column + dedup index
 
-        // Sessions table — one row per app session
         const val TABLE_SESSIONS = "sessions"
         const val COL_ID = "_id"
         const val COL_PACKAGE = "package_name"
@@ -56,13 +56,12 @@ class DatabaseHelper(context: Context) :
         const val COL_DURATION_MIN = "duration_minutes"
         const val COL_START_TIME = "start_time"
         const val COL_END_TIME = "end_time"
+        const val COL_IS_OPEN = "is_open"
 
-        // App metadata
         const val TABLE_META = "app_meta"
         const val COL_CUSTOM_NAME = "custom_name"
         const val COL_CATEGORY = "category"
 
-        // Custom categories
         const val TABLE_CUSTOM_CATEGORIES = "custom_categories"
         const val COL_CAT_NAME = "name"
 
@@ -73,7 +72,6 @@ class DatabaseHelper(context: Context) :
     }
 
     override fun onCreate(db: SQLiteDatabase) {
-        // Sessions: every discrete foreground session
         db.execSQL("""
             CREATE TABLE $TABLE_SESSIONS (
                 $COL_ID INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -84,14 +82,15 @@ class DatabaseHelper(context: Context) :
                 $COL_END_EPOCH INTEGER NOT NULL,
                 $COL_DURATION_MIN INTEGER NOT NULL,
                 $COL_START_TIME TEXT NOT NULL,
-                $COL_END_TIME TEXT NOT NULL
+                $COL_END_TIME TEXT NOT NULL,
+                $COL_IS_OPEN INTEGER NOT NULL DEFAULT 0
             )
         """.trimIndent())
+        // Unique index on (package, start_epoch) prevents duplicate inserts
+        db.execSQL("CREATE UNIQUE INDEX idx_sess_dedup ON $TABLE_SESSIONS ($COL_PACKAGE, $COL_START_EPOCH)")
         db.execSQL("CREATE INDEX idx_sess_date ON $TABLE_SESSIONS ($COL_DATE)")
         db.execSQL("CREATE INDEX idx_sess_pkg ON $TABLE_SESSIONS ($COL_PACKAGE)")
-        db.execSQL("CREATE INDEX idx_sess_start ON $TABLE_SESSIONS ($COL_START_EPOCH)")
 
-        // App metadata
         db.execSQL("""
             CREATE TABLE $TABLE_META (
                 $COL_PACKAGE TEXT PRIMARY KEY,
@@ -100,7 +99,6 @@ class DatabaseHelper(context: Context) :
             )
         """.trimIndent())
 
-        // Custom categories
         db.execSQL("""
             CREATE TABLE $TABLE_CUSTOM_CATEGORIES (
                 $COL_CAT_NAME TEXT PRIMARY KEY
@@ -109,24 +107,26 @@ class DatabaseHelper(context: Context) :
     }
 
     override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
-        if (oldVersion < 2) {
-            db.execSQL("""CREATE TABLE IF NOT EXISTS $TABLE_META (
-                $COL_PACKAGE TEXT PRIMARY KEY,
-                $COL_CUSTOM_NAME TEXT,
-                $COL_CATEGORY TEXT NOT NULL DEFAULT 'Uncategorized'
-            )""")
-        }
-        if (oldVersion < 3) {
-            db.execSQL("""CREATE TABLE IF NOT EXISTS $TABLE_CUSTOM_CATEGORIES (
-                $COL_CAT_NAME TEXT PRIMARY KEY
-            )""")
-        }
-        // v6: migrate to session-based tracking. Drop old tables, create sessions.
-        if (oldVersion < 6) {
+        // For all upgrades to v7: wipe sessions (tracking was broken), keep meta
+        if (oldVersion < 7) {
+            db.execSQL("DROP TABLE IF EXISTS sessions")
             db.execSQL("DROP TABLE IF EXISTS usage_log")
             db.execSQL("DROP TABLE IF EXISTS hourly_log")
             db.execSQL("""
-                CREATE TABLE IF NOT EXISTS $TABLE_SESSIONS (
+                CREATE TABLE IF NOT EXISTS $TABLE_META (
+                    $COL_PACKAGE TEXT PRIMARY KEY,
+                    $COL_CUSTOM_NAME TEXT,
+                    $COL_CATEGORY TEXT NOT NULL DEFAULT 'Uncategorized'
+                )
+            """.trimIndent())
+            db.execSQL("""
+                CREATE TABLE IF NOT EXISTS $TABLE_CUSTOM_CATEGORIES (
+                    $COL_CAT_NAME TEXT PRIMARY KEY
+                )
+            """.trimIndent())
+            // Recreate sessions fresh
+            db.execSQL("""
+                CREATE TABLE $TABLE_SESSIONS (
                     $COL_ID INTEGER PRIMARY KEY AUTOINCREMENT,
                     $COL_PACKAGE TEXT NOT NULL,
                     $COL_APP_NAME TEXT NOT NULL,
@@ -135,12 +135,13 @@ class DatabaseHelper(context: Context) :
                     $COL_END_EPOCH INTEGER NOT NULL,
                     $COL_DURATION_MIN INTEGER NOT NULL,
                     $COL_START_TIME TEXT NOT NULL,
-                    $COL_END_TIME TEXT NOT NULL
+                    $COL_END_TIME TEXT NOT NULL,
+                    $COL_IS_OPEN INTEGER NOT NULL DEFAULT 0
                 )
             """.trimIndent())
-            db.execSQL("CREATE INDEX IF NOT EXISTS idx_sess_date ON $TABLE_SESSIONS ($COL_DATE)")
-            db.execSQL("CREATE INDEX IF NOT EXISTS idx_sess_pkg ON $TABLE_SESSIONS ($COL_PACKAGE)")
-            db.execSQL("CREATE INDEX IF NOT EXISTS idx_sess_start ON $TABLE_SESSIONS ($COL_START_EPOCH)")
+            db.execSQL("CREATE UNIQUE INDEX idx_sess_dedup ON $TABLE_SESSIONS ($COL_PACKAGE, $COL_START_EPOCH)")
+            db.execSQL("CREATE INDEX idx_sess_date ON $TABLE_SESSIONS ($COL_DATE)")
+            db.execSQL("CREATE INDEX idx_sess_pkg ON $TABLE_SESSIONS ($COL_PACKAGE)")
         }
     }
 
@@ -156,17 +157,15 @@ class DatabaseHelper(context: Context) :
             put(COL_DURATION_MIN, session.durationMinutes)
             put(COL_START_TIME, session.startTime)
             put(COL_END_TIME, session.endTime)
+            put(COL_IS_OPEN, if (session.isOpen) 1 else 0)
         }
-        writableDatabase.insert(TABLE_SESSIONS, null, values)
+        // IGNORE on conflict — dedup index prevents duplicates silently
+        writableDatabase.insertWithOnConflict(TABLE_SESSIONS, null, values, SQLiteDatabase.CONFLICT_IGNORE)
     }
 
-    /** Delete all sessions for a date+package so we can rewrite them cleanly */
-    fun deleteSessionsForDateAndPackage(date: String, pkg: String) {
-        writableDatabase.delete(
-            TABLE_SESSIONS,
-            "$COL_DATE=? AND $COL_PACKAGE=?",
-            arrayOf(date, pkg)
-        )
+    /** Remove partial/open sessions for a date so they get rewritten fresh */
+    fun deleteOpenSessionsForDate(date: String) {
+        writableDatabase.delete(TABLE_SESSIONS, "$COL_DATE=? AND $COL_IS_OPEN=1", arrayOf(date))
     }
 
     private fun cursorToSession(c: android.database.Cursor) = SessionRecord(
@@ -178,7 +177,8 @@ class DatabaseHelper(context: Context) :
         endEpoch = c.getLong(c.getColumnIndexOrThrow(COL_END_EPOCH)),
         durationMinutes = c.getLong(c.getColumnIndexOrThrow(COL_DURATION_MIN)),
         startTime = c.getString(c.getColumnIndexOrThrow(COL_START_TIME)),
-        endTime = c.getString(c.getColumnIndexOrThrow(COL_END_TIME))
+        endTime = c.getString(c.getColumnIndexOrThrow(COL_END_TIME)),
+        isOpen = c.getInt(c.getColumnIndexOrThrow(COL_IS_OPEN)) == 1
     )
 
     fun getSessionsForDate(date: String): List<SessionRecord> {
@@ -211,26 +211,12 @@ class DatabaseHelper(context: Context) :
         return r
     }
 
-    fun getSessionsInRange(startEpoch: Long, endEpoch: Long): List<SessionRecord> {
-        val r = mutableListOf<SessionRecord>()
-        val c = readableDatabase.query(
-            TABLE_SESSIONS, null,
-            "$COL_START_EPOCH>=? AND $COL_END_EPOCH<=?",
-            arrayOf(startEpoch.toString(), endEpoch.toString()),
-            null, null, "$COL_START_EPOCH ASC"
-        )
-        c.use { while (it.moveToNext()) r.add(cursorToSession(it)) }
-        return r
-    }
+    // ── Aggregated ─────────────────────────────────────────
 
-    // ── Aggregated views (computed from sessions) ──────────
-
-    /** Per-app totals for a date, sorted by total minutes desc */
     fun getDailyRecords(date: String): List<DailyRecord> {
         val r = mutableListOf<DailyRecord>()
         val c = readableDatabase.rawQuery("""
-            SELECT $COL_PACKAGE, $COL_APP_NAME,
-                   $COL_DATE,
+            SELECT $COL_PACKAGE, $COL_APP_NAME, $COL_DATE,
                    SUM($COL_DURATION_MIN) as total_min,
                    COUNT(*) as session_count
             FROM $TABLE_SESSIONS
@@ -239,13 +225,7 @@ class DatabaseHelper(context: Context) :
             ORDER BY total_min DESC
         """.trimIndent(), arrayOf(date))
         c.use { while (it.moveToNext()) {
-            r.add(DailyRecord(
-                packageName = it.getString(0),
-                appName = it.getString(1),
-                date = it.getString(2),
-                totalMinutes = it.getLong(3),
-                sessionCount = it.getInt(4)
-            ))
+            r.add(DailyRecord(it.getString(0), it.getString(1), it.getString(2), it.getLong(3), it.getInt(4)))
         }}
         return r
     }
@@ -263,8 +243,7 @@ class DatabaseHelper(context: Context) :
             SELECT $COL_DATE, SUM($COL_DURATION_MIN)
             FROM $TABLE_SESSIONS
             WHERE $COL_DATE>=? AND $COL_DATE<=?
-            GROUP BY $COL_DATE
-            ORDER BY $COL_DATE ASC
+            GROUP BY $COL_DATE ORDER BY $COL_DATE ASC
         """.trimIndent(), arrayOf(startDate, endDate))
         c.use { while (it.moveToNext()) r.add(Pair(it.getString(0), it.getLong(1))) }
         return r
@@ -279,37 +258,20 @@ class DatabaseHelper(context: Context) :
         return dates
     }
 
-    /** Hourly totals for a specific date, from sessions */
     fun getHourlyForDate(date: String): List<HourlyRecord> {
-        // Extract hour from start_time string "HH:mm" — group and sum
         val c = readableDatabase.rawQuery("""
             SELECT CAST(SUBSTR($COL_START_TIME, 1, 2) AS INTEGER) as hour,
                    SUM($COL_DURATION_MIN)
             FROM $TABLE_SESSIONS
             WHERE $COL_DATE=?
-            GROUP BY hour
-            ORDER BY hour ASC
+            GROUP BY hour ORDER BY hour ASC
         """.trimIndent(), arrayOf(date))
         val r = mutableListOf<HourlyRecord>()
         c.use { while (it.moveToNext()) r.add(HourlyRecord(it.getInt(0), it.getLong(1))) }
         return r
     }
 
-    /** All-time hourly totals across all dates */
-    fun getAllTimeHourlyTotals(): List<HourlyRecord> {
-        val c = readableDatabase.rawQuery("""
-            SELECT CAST(SUBSTR($COL_START_TIME, 1, 2) AS INTEGER) as hour,
-                   SUM($COL_DURATION_MIN)
-            FROM $TABLE_SESSIONS
-            GROUP BY hour
-            ORDER BY hour ASC
-        """.trimIndent(), null)
-        val r = mutableListOf<HourlyRecord>()
-        c.use { while (it.moveToNext()) r.add(HourlyRecord(it.getInt(0), it.getLong(1))) }
-        return r
-    }
-
-    // ── App Meta ───────────────────────────────────────────
+    // ── Meta ───────────────────────────────────────────────
 
     fun saveAppMeta(packageName: String, customName: String?, category: String) {
         val values = ContentValues().apply {
@@ -341,8 +303,6 @@ class DatabaseHelper(context: Context) :
         }}
         return map
     }
-
-    // ── Custom Categories ──────────────────────────────────
 
     fun addCustomCategory(name: String) {
         val values = ContentValues().apply { put(COL_CAT_NAME, name.trim()) }
