@@ -192,8 +192,8 @@ class UsageRepository(private val context: Context) {
         }
     }
 
-    fun getWeeklyData() = db.getDailyTotals(*rangeFor(6))
-    fun getMonthlyData() = db.getDailyTotals(*rangeFor(29))
+    fun getWeeklyData() = rangeFor(6).let { db.getDailyTotals(it[0], it[1]) }
+    fun getMonthlyData() = rangeFor(29).let { db.getDailyTotals(it[0], it[1]) }
 
     private fun rangeFor(daysBack: Int): Array<String> {
         val cal = Calendar.getInstance()
